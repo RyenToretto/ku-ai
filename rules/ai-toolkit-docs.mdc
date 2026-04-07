@@ -1,0 +1,33 @@
+---
+description: 新增/更新 AI 工具链时必须同步维护 ku-ai 知识库
+alwaysApply: true
+---
+
+# AI 工具链文档同步规范
+
+每次新增或更新 MCP 服务器、Agent Skill、Cursor Rule 或其他 AI 工具时，必须同步在 `/Users/koujianfeng/Desktop/ku-ai` 知识库中创建或更新对应文档。
+
+## 新增 MCP
+
+1. 在 `ku-ai/mcps/<name>/` 创建文件夹
+2. 必须包含：`README.md`（概述+配置）、`docs/official.md`（官方文档）、`examples/basic.md`（示例）、`best-practices.md`
+3. README 必须包含：npm 包名、配置 JSON 片段、提供的 tools 列表、前置条件
+
+## 新增 Skill
+
+1. 在 `ku-ai/skills/<name>/` 创建文件夹
+2. 必须包含：`README.md`（概述+安装命令）、`SKILL.md`（原文副本）、`docs/`、`examples/`
+3. README 必须包含：安装命令、触发条件、依赖关系
+
+## 新增 Rule
+
+1. 在 `ku-ai/rules/` 下放置 `.mdc` 副本
+2. 同时创建 `.md` 说明文件（设计意图+适用场景）
+
+## 更新已有工具
+
+修改配置或升级版本后，同步更新 ku-ai 中的对应文档。
+
+## 完成后
+
+提交到 ku-ai 仓库并 push master。
