@@ -18,6 +18,7 @@
 - **仅 playground**：LOL 客户端风格；SDK `src/` 禁止承载主题资源
 - **SCSS**：禁止 `&__` / `&--` / `&-` 的类名拼接；允许 `&.success` 这类状态连写
 - **主题 partial**：只能放在 `playground/src/styles/theme/`，并由 `playground/src/styles/index.scss` 统一注入
+- **Vue SFC 顺序**：统一为 `<template>` -> `<script>` -> `<style>`，由 ESLint 强制
 
 ## 同步说明
 

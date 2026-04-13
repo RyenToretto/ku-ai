@@ -28,6 +28,11 @@ alwaysApply: false
 - 全局注入只能走 `playground/src/styles/index.scss`
 - 业务 `.vue` / `.ts` **不要**直接 import / `@use` `tokens.scss` / `mixins.scss`（由 ESLint `no-restricted-imports` 兜底）
 
+## Vue SFC 顺序
+
+- `playground` 下的 `.vue` 文件统一使用：`<template>` -> `<script>` -> `<style>`
+- 该顺序由 ESLint 的 `vue/block-order` 在 `playground/**/*.vue` 范围内强制校验
+
 ## 与 SDK 的关系
 
 - playground 允许通过 Vite alias 直接引用根目录 `src/` 做联调热更新。
