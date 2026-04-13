@@ -8,6 +8,7 @@
 |---------|------|-------------|
 | `code-quality.mdc` | 通用代码质量规范（DRY、KISS、命名、错误处理） | true |
 | `git-workflow.mdc` | Git 工作流规范（原子提交、分支命名、Code Review） | true |
+| `playground-lol-theme.mdc` | xh-report playground：LOL 客户端风格与主题边界（仅 playground） | false |
 
 ## 与项目级规则的关系
 
