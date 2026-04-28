@@ -1,0 +1,85 @@
+---
+description: CSS class / DOM id 命名约束 - 禁止任何元素的类名或 id 完整包含其根元素的类名或 id（互为子串）
+alwaysApply: true
+---
+
+# CSS / DOM 命名约束
+
+## 核心规则
+
+**同一组件 / 视图内，禁止任何元素的 class 名或 id 名完整包含根元素（最外层 host）的 class 名或 id 名作为子串；反之亦然。**
+
+> "完整包含" 指字符串子串关系，不依赖 `-` / `_` / `__` / `--` 等分隔符。
+
+### ❌ 违规示例
+
+```html
+<div class="foo">
+  <div class="foo__bar"></div>   <!-- 'foo__bar' 包含 'foo' -->
+  <div class="foo-bar"></div>    <!-- 'foo-bar' 包含 'foo' -->
+  <div class="foo_bar"></div>    <!-- 'foo_bar' 包含 'foo' -->
+  <div class="fooBar"></div>     <!-- 'fooBar' 包含 'foo' -->
+  <div class="my-foo-section"></div> <!-- 'my-foo-section' 包含 'foo' -->
+</div>
+```
+
+```html
+<section id="user">
+  <div id="user-list"></div>     <!-- 'user-list' 包含 'user' -->
+</section>
+```
+
+### ✅ 合规示例
+
+```html
+<!-- 根加 -host / -page / -screen / -root 后缀，让根名独立于子元素 BEM block -->
+<div class="foo-host">
+  <div class="foo"></div>          <!-- block -->
+  <div class="foo__item"></div>    <!-- block__element -->
+  <div class="foo__item is-active"></div> <!-- block__element + 状态类 -->
+</div>
+```
+
+## 为什么这么做
+
+1. **工具搜索 / 替换不误伤**：搜 `foo` 时不会同时命中 `foo__bar` / `foo-bar`
+2. **属性选择器无歧义**：`[class*="foo"]` 不会同时匹配根和所有子元素
+3. **CSS Reset / Tailwind / 编译插件**按 prefix 处理时不会误伤
+4. **BEM 严谨实践**：block 名应当独占一个命名空间，host 容器与 block 分离
+5. **重构友好**：重命名根类不会强制级联改所有子类
+
+## 命名模式（推荐）
+
+| 角色 | 后缀 | 示例 |
+|------|------|------|
+| 页面级容器（路由页面） | `-page` | `user-profile-page` |
+| 视图 / 屏 | `-screen` / `-view` | `dashboard-screen` |
+| 通用组件 / 表单字段 | `-host` / `-root` | `episode-list-field-host` |
+| 弹层容器 | `-dialog-host` | `edit-user-dialog-host` |
+
+子元素继续走 BEM：`block`、`block__element`、`block--modifier`、`is-xxx` 状态类。
+
+## 与已有 LESS 嵌套规则联动
+
+- ✅ `&.is-active`、`&:hover`、`&[disabled]`、`&::before` —— 允许（伪类 / 状态类组合）
+- ❌ `&__item`、`&-success`、`&--large` —— 禁止（类名字符串拼接）
+- ❌ 在 LESS 嵌套中让根 block 名同时作为子元素的连续 prefix —— 禁止（本规则）
+
+## 自检命令
+
+提交前可用以下命令快速发现潜在违规（替换 `<root>` 为根 class 名）：
+
+```bash
+rg --pcre2 'class="[^"]*\b<root>[\-_a-zA-Z0-9]+' src/
+```
+
+或在 `.vue` 文件 `<style scoped>` 中查找：
+
+```bash
+rg '\.\<root>[\-_]' src/
+```
+
+## 例外
+
+- 全局工具类（`.is-active`、`.with-affix-header`、`.do-form-section` 等公共类）不参与本规则约束
+- 第三方组件库（element-ui、ant-design）输出的 class 不受约束
