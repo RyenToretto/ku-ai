@@ -24,13 +24,19 @@ Playwright MCP 在调试 / 自检过程中会大量产出截图（`browser_take_
 
 ## 自检
 
-任务完成前必跑：
+任务完成前必跑（基于 git untracked，避免误伤项目合法资源）：
 
 ```bash
-ls *.png *.jpg *.jpeg *.webp 2>/dev/null
+git status --porcelain | grep -E '\.(png|jpe?g|webp|gif|har|zip|trace)$' || echo 'CLEAN'
 ```
 
-有任何命中都视为违规，必须移动到 `.playwright-mcp/logs/<topic>/` 或删除。
+判定逻辑：
+
+- `.playwright-mcp/` 已 gitignore，里面的产物**永远不会**出现在 git status，所以输出里的图片/HAR 一定是 Agent 漏洒到业务目录的违规品
+- 已被 git 追踪的合法资源（`logo.png` / `cover.png` / README 截图）也不会出现在 untracked 列表
+- 输出 `CLEAN` 即合规；否则按命中文件移动到 `.playwright-mcp/logs/<topic>/` 或删除
+
+> ⚠️ **不要再用 `ls *.png` 这类裸通配符做自检** —— 会把项目根下的 `logo.png` / `cover.png` / README 引用的截图等合法资源也命中，导致误判。
 
 ## 与既有规则的关系
 
