@@ -1,0 +1,103 @@
+---
+description: Playwright MCP 产出的截图/快照/trace 等临时资源，禁止直接落到项目根；必须放在 .playwright-mcp/logs/<topic>/ 子文件夹下
+alwaysApply: true
+---
+
+# Playwright 临时资源存储规范
+
+## 核心原则
+
+Playwright MCP 在自动化验证过程中会产生大量临时资源（截图、HTML 快照、trace、network log 等）。这些资源**只服务于本次 Agent 调试**，不属于项目交付物，**绝不能污染项目根或 `src/` 等业务目录**。
+
+所有此类资源必须统一收纳在 `.playwright-mcp/logs/<topic>/` 子文件夹下；`.playwright-mcp/` 必须在项目 `.gitignore` 中。
+
+## 强制路径模板
+
+```
+.playwright-mcp/
+├── logs/
+│   ├── <topic-1>/         # 每次验证任务一个子目录
+│   │   ├── 01-初始页.png
+│   │   ├── 02-筛选后.png
+│   │   └── network.har
+│   └── <topic-2>/
+└── (Playwright MCP 自动产出的 console-*.log / page-*.yml 保持原位)
+```
+
+- `<topic>` 用 kebab-case，与本次任务语义一致（例如 `drama-daily-assign`、`auth-flow-fix`、`oss-uploader-regress`）
+- 同一 Agent 会话内的所有截图/快照都落到同一个 `<topic>/`，便于回溯
+- 文件名建议加 `01-` / `02-` 顺序前缀，体现验证步骤
+
+## 工具调用约束
+
+### `browser_take_screenshot`
+
+**禁止**：
+
+```jsonc
+// ❌ 落到项目根
+{ "filename": "drawer-opened.png" }
+
+// ❌ 落到 src 业务目录
+{ "filename": "src/modules/foo/screenshot.png" }
+```
+
+**正确**：
+
+```jsonc
+// ✅ 必须显式带路径前缀
+{ "filename": ".playwright-mcp/logs/drama-daily-assign/01-drawer-opened.png" }
+```
+
+如果 `browser_take_screenshot` 无法自动创建子目录，先用 Shell 工具：
+
+```bash
+mkdir -p .playwright-mcp/logs/<topic>
+```
+
+### `browser_save_pdf` / `browser_har_recording_*` 等
+
+同样规则——所有需要 `filename` / 输出路径参数的 Playwright MCP 工具，全部走 `.playwright-mcp/logs/<topic>/`。
+
+### Playwright MCP 内部产物（console / snapshot）
+
+Playwright MCP 自身写到 `.playwright-mcp/` 根的 `console-*.log`、`page-*.yml` 等保持原状，不要手动搬动；这些文件由 MCP 进程持有引用。
+
+## 项目侧准备
+
+1. **`.gitignore` 必须包含**：
+
+```
+.playwright-mcp
+```
+
+（已存在则跳过；该目录会被整体忽略）
+
+2. **不要把任何 .playwright-mcp/ 下的产物 commit 进仓库**——它们是会话级垃圾，过期即失效。
+
+## 自检命令
+
+会话结束前/任务完成前快速检查：
+
+```bash
+# 1. 项目根是否仍有图片污染
+ls *.png *.jpg *.jpeg *.webp 2>/dev/null
+
+# 2. src/ 等业务目录是否漂入测试截图
+rg -l "data:image/png;base64" src/ 2>/dev/null
+find src/ -name "*.png" -o -name "*.har" 2>/dev/null
+```
+
+如有命中，必须**移动**到 `.playwright-mcp/logs/<topic>/` 或直接删除，不允许留在项目内。
+
+## 例外
+
+- 业务素材（icon / cover / logo 等）**不属于本规则**，按各自模块的 `assets/` 规范放置
+- 飞书/Stitch 等其它 MCP 的截图同样建议放到 `.playwright-mcp/logs/<topic>/` 或 `.<other-mcp>/logs/<topic>/`，不要直接落项目根
+
+## 为什么这么做
+
+1. **可见性**：项目根/`src/` 应该只有源代码与项目配置，截图杂物会让 IDE 文件树噪声严重
+2. **gitignore 友好**：所有调试产物集中在一个已忽略的目录，避免误 commit / push 巨大二进制
+3. **可清理**：清理一次会话垃圾只需 `rm -rf .playwright-mcp/logs/<topic>` 而非到处 grep 删图
+4. **可回溯**：按 topic 分文件夹后，几个月后回查某次问题排查的截图链路非常清晰

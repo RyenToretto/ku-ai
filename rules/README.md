@@ -9,6 +9,10 @@
 | `code-quality.mdc` | 通用代码质量规范（DRY、KISS、命名、错误处理） | true |
 | `git-workflow.mdc` | Git 工作流规范（原子提交、分支命名、Code Review） | true |
 | `css-naming.mdc` | CSS class / DOM id 命名约束（根与子元素互不为子串） | true |
+| `dev-scenarios.mdc` | 典型场景日志记录规范（首次操作 / 踩坑修复 / 多步骤流程） | true |
+| `ai-toolkit-docs.mdc` | AI 工具链（MCP / Skill / Rule）文档同步到 ku-ai 仓库 | true |
+| `playwright-chrome.mdc` | Playwright MCP 必须复用日常 Chrome（保留登录态） | true |
+| `playwright-artifacts.mdc` | Playwright 临时资源统一收到 `.playwright-mcp/logs/<topic>/` | true |
 
 ## 与项目级规则的关系
 
