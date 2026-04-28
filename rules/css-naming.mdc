@@ -1,5 +1,5 @@
 ---
-description: CSS class / DOM id 命名约束 - 禁止任何元素的类名或 id 完整包含其根元素的类名或 id（互为子串）
+description: CSS class / DOM id 命名约束 - 根 class 强制等于组件 kebab-case；子元素换不同命名空间，避免与根名互为子串
 alwaysApply: true
 ---
 
@@ -7,79 +7,122 @@ alwaysApply: true
 
 ## 核心规则
 
-**同一组件 / 视图内，禁止任何元素的 class 名或 id 名完整包含根元素（最外层 host）的 class 名或 id 名作为子串；反之亦然。**
+### 规则 1：根 class 必须等于组件名的 kebab-case
 
-> "完整包含" 指字符串子串关系，不依赖 `-` / `_` / `__` / `--` 等分隔符。
+组件文件名 `AaaaBbb.vue` → 根元素 class 必须是 `aaaa-bbb`，**不允许加任何后缀**（如 `-page` / `-host` / `-root`）。
 
-### ❌ 违规示例
+```vue
+<!-- OssUploader.vue -->
+<template>
+  <div class="oss-uploader">  <!-- ✅ 根 = 组件名 kebab-case -->
+    ...
+  </div>
+</template>
+```
 
-```html
-<div class="foo">
-  <div class="foo__bar"></div>   <!-- 'foo__bar' 包含 'foo' -->
-  <div class="foo-bar"></div>    <!-- 'foo-bar' 包含 'foo' -->
-  <div class="foo_bar"></div>    <!-- 'foo_bar' 包含 'foo' -->
-  <div class="fooBar"></div>     <!-- 'fooBar' 包含 'foo' -->
-  <div class="my-foo-section"></div> <!-- 'my-foo-section' 包含 'foo' -->
+```vue
+<!-- ❌ 错误：根加后缀 -->
+<div class="oss-uploader-host">
+<div class="oss-uploader-page">
+```
+
+### 规则 2：同一组件内，任何 class / id 互不为子串
+
+根元素 class 不允许被任何子元素 class 完整包含；反之亦然。子元素之间也应避免互为子串。
+
+> "完整包含" 指字符串子串关系，**不依赖 `-` / `_` / `__` / `--` 等分隔符**。
+
+### 规则 3：子元素 BEM block 用与根名不同的独立命名空间
+
+由于规则 1 + 规则 2 的联合约束，子元素**不能**继续以根 class 作 BEM block 名（即不能写 `.oss-uploader__input`），必须换成其他不与项目内任何 class 冲突的命名空间。
+
+命名空间选择优先级：
+1. **业务语义命名**（推荐）：用业务实体或操作动词，如 `drama-ep__list`（短剧剧集列表）、`oss-pick__input`（OSS 选择器输入）
+2. **功能简称**：用组件功能的简短表达，如 `creator-form__panel`、`tag-picker__chip`
+3. **避免**：纯缩写如 `ouv__xxx`、`elf__xxx`（语义模糊）
+
+## ❌ 违规示例
+
+```vue
+<!-- OssUploader.vue -->
+<div class="oss-uploader">
+  <input class="oss-uploader__input" />  <!-- ❌ 'oss-uploader__input' 包含 'oss-uploader' -->
+  <div class="oss-uploader-trigger" />   <!-- ❌ 同上 -->
+  <div class="ossUploaderInput" />       <!-- ❌ camelCase 仍包含子串 -->
 </div>
 ```
 
 ```html
 <section id="user">
-  <div id="user-list"></div>     <!-- 'user-list' 包含 'user' -->
+  <div id="user-list"></div>             <!-- ❌ 'user-list' 包含 'user' -->
 </section>
 ```
 
-### ✅ 合规示例
+## ✅ 合规示例
 
-```html
-<!-- 根加 -host / -page / -screen / -root 后缀，让根名独立于子元素 BEM block -->
-<div class="foo-host">
-  <div class="foo"></div>          <!-- block -->
-  <div class="foo__item"></div>    <!-- block__element -->
-  <div class="foo__item is-active"></div> <!-- block__element + 状态类 -->
+```vue
+<!-- OssUploader.vue -->
+<div class="oss-uploader">              <!-- 根 = kebab-case 组件名 -->
+  <input class="oss-pick__input" />     <!-- 子用独立命名空间 -->
+  <span class="oss-pick__hidden-trigger" />
+</div>
+```
+
+```vue
+<!-- EpisodeListField.vue -->
+<div class="episode-list-field">        <!-- 根 -->
+  <div class="drama-ep__list">          <!-- 子用 drama-ep 命名空间 -->
+    <div class="drama-ep__item">
+      <div class="drama-ep__chip">EP1</div>
+      <i class="drama-ep__action is-danger" />
+    </div>
+  </div>
+</div>
+```
+
+```vue
+<!-- OriginDramaCreator.vue -->
+<div class="origin-drama-creator">      <!-- 根 -->
+  <div class="playlet-creator__panel">  <!-- 子用 playlet-creator 命名空间 -->
+    <div class="playlet-creator__left" />
+    <div class="playlet-creator__tips" />
+  </div>
 </div>
 ```
 
 ## 为什么这么做
 
-1. **工具搜索 / 替换不误伤**：搜 `foo` 时不会同时命中 `foo__bar` / `foo-bar`
-2. **属性选择器无歧义**：`[class*="foo"]` 不会同时匹配根和所有子元素
-3. **CSS Reset / Tailwind / 编译插件**按 prefix 处理时不会误伤
-4. **BEM 严谨实践**：block 名应当独占一个命名空间，host 容器与 block 分离
-5. **重构友好**：重命名根类不会强制级联改所有子类
+1. **根 class = 组件名**：DevTools 元素树一眼能定位组件归属，等同于隐式 `data-component` 标签
+2. **互不为子串**：
+   - 工具搜索 `oss-uploader` 不会同时命中 `oss-uploader__input`，避免误改
+   - `[class*="oss-uploader"]` 属性选择器不会匹配子元素
+   - CSS Reset / Tailwind / 编译插件按 prefix 处理时不会误伤
+3. **子元素独立命名空间**：
+   - 让子元素的 BEM block 有独立语义（`drama-ep` 比 `episode-list-field__item` 更聚焦"剧集"语义）
+   - 重构根组件时不需要级联改子元素 class
+   - 子元素 block 可在多个相邻组件复用（前提：保持全局唯一）
 
-## 命名模式（推荐）
+## 与 LESS 嵌套规则联动
 
-| 角色 | 后缀 | 示例 |
-|------|------|------|
-| 页面级容器（路由页面） | `-page` | `user-profile-page` |
-| 视图 / 屏 | `-screen` / `-view` | `dashboard-screen` |
-| 通用组件 / 表单字段 | `-host` / `-root` | `episode-list-field-host` |
-| 弹层容器 | `-dialog-host` | `edit-user-dialog-host` |
-
-子元素继续走 BEM：`block`、`block__element`、`block--modifier`、`is-xxx` 状态类。
-
-## 与已有 LESS 嵌套规则联动
-
-- ✅ `&.is-active`、`&:hover`、`&[disabled]`、`&::before` —— 允许（伪类 / 状态类组合）
-- ❌ `&__item`、`&-success`、`&--large` —— 禁止（类名字符串拼接）
-- ❌ 在 LESS 嵌套中让根 block 名同时作为子元素的连续 prefix —— 禁止（本规则）
+- ✅ 允许：`&.is-active` / `&:hover` / `&[disabled]` / `&::before`（伪类与状态类组合）
+- ❌ 禁止：`&__item` / `&-success` / `&--large`（任何形式的类名字符串拼接）
+- ❌ 禁止：根 class 与子元素 class 互为子串（本规则）
 
 ## 自检命令
 
-提交前可用以下命令快速发现潜在违规（替换 `<root>` 为根 class 名）：
-
 ```bash
+# 检查根 class 与子元素子串关系（替换 <root> 为根 class 名）
 rg --pcre2 'class="[^"]*\b<root>[\-_a-zA-Z0-9]+' src/
-```
 
-或在 `.vue` 文件 `<style scoped>` 中查找：
+# 在 .vue scoped style 中查找潜在违规
+rg '\.<root>[\-_]' src/
 
-```bash
-rg '\.\<root>[\-_]' src/
+# 跨文件搜索新 namespace 是否冲突（避免重名）
+rg '\.<new-namespace>[\-_\s\{,:]' src/
 ```
 
 ## 例外
 
-- 全局工具类（`.is-active`、`.with-affix-header`、`.do-form-section` 等公共类）不参与本规则约束
-- 第三方组件库（element-ui、ant-design）输出的 class 不受约束
+- **公共工具类**：`.is-active` / `.with-affix-header` / `.do-form-section` 等不参与本规则
+- **三方组件库**：element-ui、ant-design 输出的 class 不受约束
+- **scoped 默认能力**：Vue scoped style 编译后会附加属性选择器，本规则约束的是源代码可读层级
