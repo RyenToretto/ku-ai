@@ -1,0 +1,186 @@
+---
+description: 第三方上报（FB Pixel / TikTok / Adjust 等）必须先走 $xhTracker / $attrTracker 业务上报, 强制 hook 封装绑定; 涵盖事件名转换 + 例外白名单 + 检测命令
+alwaysApply: true
+---
+
+# 第三方上报配对规则
+
+PM 强制要求：**除 FB 标准事件 `PageView` 以外，任何第三方上报（FB Pixel / TikTok Pixel / Adjust / Snapchat 等）都必须与业务上报（`$xhTracker` 或 `$attrTracker`）成对出现，且封装在同一个 hook 内**。未来引入任何新第三方 SDK 同理。
+
+## 核心原则
+
+1. **业务上报优先**：先调用 `$xhTracker` / `$attrTracker`，再调用第三方 SDK
+2. **同 hook 封装**：业务 + 第三方上报**必须**在同一个 composable / hook 内一次性触发，调用方只见一次入口
+3. **事件名 snake_case 镜像**：第三方平台用 `PascalCase` 标准事件名（FB `InitiateCheckout`），业务上报必须用全小写下划线分割（`initiate_checkout`）
+4. **跨平台对齐**：FB 自定义事件名 / 悬壶事件名 / xh 事件名应**复用同一字符串**（如 `upload_success` 全平台统一）
+
+## 强制流程
+
+### 引入新第三方上报需求时
+
+1. **检查是否已有配对**：先看 `useStartTracker` / `useRegisterTracker` / `usePricingTracker` 等业务 hook 是否已有该业务事件
+2. **新建/扩展业务 hook**：把第三方上报封装在同一函数体内
+3. **业务上报在前，第三方在后**：保证业务漏斗不依赖第三方 SDK 加载状态
+4. **写好 JSDoc 注释**：标明业务事件 + 第三方事件双重职责
+5. **更新规则白名单**（如有新例外）
+
+### 第三方上报与业务上报的事件名映射表
+
+| 第三方平台 | 标准事件名（保留原样）| 业务上报事件名（snake_case） |
+|---|---|---|
+| FB Pixel | `ViewContent` | `landing_view` / `content_view` 等业务语义名 |
+| FB Pixel | `InitiateCheckout` | `click_pay` / `initiate_checkout` |
+| FB Pixel | `Purchase` | `purchase` |
+| FB Pixel | `CompleteRegistration` | `sign_up` / `complete_registration` |
+| FB Pixel | `AddToCart` | `add_to_cart` |
+| FB Pixel 自定义 | `upload_success` | `upload_success`（同名复用）|
+| FB Pixel 自定义 | `login_success` | `login_success`（同名复用）|
+
+> 业务事件名优先采用项目内已有的 `TrackerBehaviorEvent` / `TrackerKeyEvent` enum 值。若 PM 文档未定义，则按标准事件名转 snake_case 兜底（`InitiateCheckout` → `initiate_checkout`）。
+
+## ✅ 合规示例
+
+### 示例 A：FB 标准事件 + 业务关键事件（同 hook 一体上报）
+
+```typescript
+// app/composables/usePricingTracker.ts
+import { useFacebookTracker } from '~/composables/useFacebookTracker'
+
+export const usePricingTracker = () => {
+  const { $xhTracker } = useNuxtApp()
+  const fbTracker = useFacebookTracker()
+
+  /**
+   * ✅【关键事件】支付成功
+   * - $xhTracker: TrackerKeyEvent.Purchase (= 'purchase', 双发 xhReport + GA)
+   * - fb Pixel: Purchase 标准事件 (一次性, value / currency / content_ids)
+   */
+  const trackPurchaseSuccess = (params: { sku_id: string; value: number; transaction_id?: string }) => {
+    $xhTracker(TrackerKeyEvent.Purchase, {
+      sku_id: params.sku_id,
+      value: params.value,
+      currency: 'USD',
+      transaction_id: params.transaction_id
+    })
+    fbTracker.trackPurchaseSuccess(params.value, 'USD', [params.sku_id])
+  }
+
+  return { trackPurchaseSuccess }
+}
+```
+
+调用方只需一次：
+
+```typescript
+// app/stores/usePaymentStore.ts
+const pricingTracker = usePricingTracker()
+
+function trackPaySuccess() {
+  pricingTracker.trackPurchaseSuccess({ sku_id, value, transaction_id })
+  // ❌ 不允许在这里再单独调 fb
+}
+```
+
+### 示例 B：FB 自定义事件 + 业务行为事件（snake_case 同名）
+
+```typescript
+// app/composables/useStartTracker.ts
+const trackUploadSuccess = (params: { file_size: number; mime_type: string }) => {
+  $attrTracker(TrackerBehaviorEvent.UploadSuccess, { status: 'success', ...params })
+  fbTracker.trackUploadSuccess({ content_category: 'photo', ...params })
+}
+```
+
+## ❌ 反例
+
+### 反例 1：分散两步调用
+
+```typescript
+// ❌ 调用方分别调 xh 和 fb, 容易漏一个; 命名也不统一
+loginTracker.trackLoginSuccessEmail('returning')
+trackCompleteRegistration('email')
+```
+
+**修复**：合并到一个 hook：
+
+```typescript
+// useRegisterTracker.ts
+const trackSignUpSuccessEmail = () => {
+  $xhTracker(TrackerKeyEvent.SignUp, { method: 'email', source })
+  fbTracker.trackCompleteRegistration('email')
+}
+```
+
+### 反例 2：业务代码直接 import `useFacebookTracker` 裸调
+
+```typescript
+// ❌ 组件 / store 不允许直接 import useFacebookTracker
+import { useFacebookTracker } from '~/composables/useFacebookTracker'
+
+const handleClick = () => {
+  const { trackInitiateCheckout } = useFacebookTracker()
+  trackInitiateCheckout(9.99, 'USD', ['weekly'])  // 没有任何业务上报配对
+}
+```
+
+**修复**：在 `usePricingTracker` / `useStartTracker` 等业务 hook 中暴露已配对的 `trackClickPay`，调用方使用业务 hook。
+
+### 反例 3：未做 PascalCase → snake_case 映射
+
+```typescript
+// ❌ 业务上报用了 FB 风格的 PascalCase
+$attrTracker('InitiateCheckout', { value: 9.99 })
+```
+
+**修复**：转 snake_case：
+
+```typescript
+$attrTracker('initiate_checkout', { value: 9.99 })
+// 或更好: 走 enum
+$attrTracker(TrackerBehaviorEvent.ClickPay, { value: 9.99 })
+```
+
+## 白名单 (例外)
+
+唯一允许**不配对**业务上报的第三方调用：
+
+| 场景 | 位置 | 说明 |
+|---|---|---|
+| FB Pixel `PageView` 初始化 | `app/plugins/00_a2_pixel.client.ts` 的 `fbq('init', ...); fbq('track', 'PageView')` | 由 SDK 初始化脚本自动一次，本身是 SDK 自检不属于业务事件 |
+
+任何其他白名单需求**必须**先与 PM 确认，更新本文档后才能落地。
+
+## 检测命令
+
+```bash
+# 1. 业务代码（组件 / store / page）是否裸 import useFacebookTracker
+# 应该只命中已配对业务 hook (useStartTracker / usePricingTracker / useRegisterTracker)
+rg -n "useFacebookTracker\\(\\)|from.*useFacebookTracker" app/ -g '!app/composables/use*Tracker.ts'
+
+# 2. fbq 直接调用 (除了 PageView 初始化白名单)
+rg -n "fbq\\(['\"]track" app/ -g '!app/plugins/00_a2_pixel.client.ts'
+
+# 3. 业务事件名混用 PascalCase
+rg -n "\\\$attrTracker\\(['\"][A-Z]|\\\$xhTracker\\(['\"][A-Z]" app/
+
+# 4. 同函数体内 fb + xh/attr 是否成对 (人工审查; 推荐用 ast-grep)
+ast-grep --pattern '$$$ fbTracker.$M($$$) $$$' app/composables/
+```
+
+输出应为空（除白名单外）。
+
+## 引入新第三方 SDK 时
+
+模板：
+
+1. 新建 `app/composables/use<Vendor>Tracker.ts` 作为**内部**封装层（顶部 banner 写明"业务代码禁止直接 import"）
+2. 在已有业务 hook（如 `useStartTracker`）中 import `use<Vendor>Tracker`，并在每个业务事件函数体内**先 xh/attr 后 vendor**
+3. 更新本文档「事件名映射表」+「白名单」
+4. 写 dev-scenarios 文档记录接入流程
+
+## 为什么这么做
+
+1. **漏斗一致性**：业务上报（xh/GA）是公司内部分析口径；第三方（FB Ads）是投放归因口径；两者必须**事件量相等**才能算出准确转化率。分散调用必定漏。
+2. **可控开关**：第三方 SDK 加载失败 / 用户开启 AdBlock 时，业务上报仍能跑完，不会因 fb 失败而中断；反向也成立。
+3. **代码审计**：评审只需看业务 hook 的 diff 就能确认本次新增事件覆盖了所有上报渠道，无需跨多个文件追踪。
+4. **未来扩展**：接入 TikTok / Adjust 时只需在已有 hook 内追加一行，调用方零侵入。
