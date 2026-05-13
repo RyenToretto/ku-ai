@@ -1,0 +1,50 @@
+---
+description: 何时把开发过程中遇到的内容沉淀为 rule / skill / dev-scenarios 的判定清单
+alwaysApply: true
+---
+
+# 知识沉淀判定规范
+
+开发或调试过程中遇到任何**有意义的内容**，停下 30 秒判断「这值不值得沉淀」。遵循以下分类：
+
+## 沉淀为 cursor rule (`.cursor/rules/*.mdc`)
+
+满足任一条件即沉淀：
+
+1. **跨多个文件 / 多个组件都要遵守**的编码 / 命名约定（如 BEM 规则、i18n key 复用、事件名 snake_case）
+2. **平台 / 框架硬约束**（如 Nuxt 4 auto-import 禁止手动 import、Vue 2 v-model 双向同步范式）
+3. **业务级铁则**（如图片只能 base64、不允许调上传接口、id 类字段统一 string）
+4. **不沉淀就一定会被新代码再次违反**的隐性规则
+
+## 沉淀为 agent skill (`.agents/skills/*` 或 `~/.agents/skills/*`)
+
+满足任一条件即沉淀：
+
+1. **多步骤工作流**且未来会被再次执行（如 feishu-api-sync、feishu-policy-sync）
+2. **涉及外部 MCP / SDK 调用链**且步骤之间有强依赖（如 figma-implement-design）
+3. **需要约 5 个以上 tool 调用**才能完成的可复用任务
+
+## 沉淀为 dev-scenarios 日志 (`docs/dev-scenarios/*.md`)
+
+按全局 `dev-scenarios.mdc` 规则——首次操作 / 踩坑修复 / 多步骤流程 / 环境配置 / 破坏性变更 / 团队复用价值——任一满足即记录。
+
+## 沉淀触发动作
+
+- **新增 rule**：写 `.mdc` → 按 `ai-toolkit-docs.mdc` 同步到 `~/Desktop/ku-ai/rules/`（rule 副本 + `.md` 说明）→ 提交 ku-ai 并 push master
+- **新增 skill**：同上，目录为 `~/Desktop/ku-ai/skills/<name>/`
+- **更新已有规则**：同步更新 ku-ai 中对应文档
+
+## 自检触发时机（强制）
+
+下列情况必须主动判定一次：
+
+- 完成一次重要 commit / PR 之后
+- 修复了一个非显而易见的 bug 之后
+- 引入了新依赖 / 新 MCP / 新工作流之后
+- 走完了一个跨多文件的多步骤任务之后
+
+判定结果记录在 PR 描述 / 复盘 dev-scenarios 文档底部的「沉淀清单」小节。
+
+## 主动补点（埋点维度）
+
+开发过程中遇到的**有意义且需要埋点**的地方也属于本规则范畴。详见 [`track-event-naming.mdc`](./track-event-naming.mdc) 末尾「主动补点」节——这是「埋点沉淀」的子规则。

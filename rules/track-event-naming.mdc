@@ -1,0 +1,91 @@
+---
+description: 埋点事件名 / 参数 key 命名约束（悬壶 + FB Pixel + GA 统一 snake_case）+ 开发期主动补点
+alwaysApply: true
+---
+
+# 埋点命名规范
+
+所有上报到代码里的事件名 / 参数 key 必须 `snake_case`（小写 + 下划线分隔），不论 PM 文档原始写法是 `PageView` / `ViewContent` 还是别的形式。**禁止**散落字符串字面量，所有事件名只能通过 enum / 常量取值。
+
+## 强制规则
+
+### 事件名
+
+- 悬壶 `$attrTracker` / GA / xh-report：**必须** snake_case，例如 `landing_view` / `click_upload` / `login_success`
+- FB Pixel **标准事件**（FB 平台保留名，不能改名）：`PageView` / `ViewContent` / `AddToCart` / `InitiateCheckout` / `Purchase` / `CompleteRegistration` 等，**保持原样**用 `fbq('track', 'PageView')`
+- FB Pixel **自定义事件**（项目自定义业务事件）：**必须** snake_case，用 `fbq('trackCustom', 'upload_success', {...})`
+- 自定义事件名应与悬壶事件名**复用同一字符串**，方便跨平台漏斗对齐
+
+### 参数 key
+
+- 必须 snake_case：`btn_name` / `error_code` / `plan_type` / `trigger_source` / `login_type` / `module_name` / `content_ids` / `external_id` / `event_id` / `event_time` ...
+- 货币统一 `currency: 'USD'`
+- 用户标识统一 `external_id`（不要 `userId` / `user_id` 混用，对齐 FB CAPI 字段名）
+
+### 集中管理
+
+- 事件名常量集中在 `shared/constants/tracker.ts`：
+  - 悬壶事件用 `TrackerBehaviorEvent` enum（TS key PascalCase / value snake_case）
+  - FB Pixel 用 `FbPixelEvent` 常量（标准事件保留原样 / 自定义事件 snake_case）
+- 组件 / composable 中**禁止**写字符串字面量调用 `$attrTracker('xxx')` / `fbq('track', 'Xxx')`，必须通过 enum 取值
+- 新增事件先在 enum 注释里写清触发时机 + 必需参数，再写业务代码
+- **开发期主动补点**：埋点不仅限于 PM 文档列出的事件。开发过程中遇到以下情况，必须主动补点：
+  - 任何可能失败的关键操作（带 `error_code` / `fail_reason`）
+  - 任何漏斗损耗节点（弹窗 / 浮层 / 收银台关闭未完成）
+  - 任何拦截 / 限流命中（防白嫖 / 投放识别非法 / 限流触发）
+
+### 检测命令
+
+ripgrep 自检以下违规：
+
+```bash
+# 散落的悬壶事件字面量
+rg -n "\\\$attrTracker\\(['\"][a-z_]+['\"]" app/
+
+# 散落的 Pixel 事件字面量（白名单 FB 标准事件后查询剩余）
+rg -n "fbq\\(['\"]track['\"]," app/
+
+# camelCase / PascalCase 的悬壶事件值
+rg -n "TrackerBehaviorEvent\\.\\w+ = '[A-Z]" shared/constants/
+```
+
+输出应只命中 enum 定义本身，不应在业务代码里出现新的字面量。
+
+## 例外
+
+- FB Pixel 平台标准事件名是 FB 保留字段，不在 snake_case 约束内
+- 第三方 SDK 内置事件（Adjust / GA gtag 默认事件）按 SDK 文档原样调用
+
+## 主动补点（Proactive Instrumentation）
+
+PM 定义的埋点是「业务目标视角」，开发期还应基于「可观测性 + 漏斗精化」视角主动补点：
+
+### 必补类目
+
+1. **失败诊断**：所有可能失败的关键操作必须有失败事件，并带 `error_code` / `fail_reason`
+   - 资源加载失败（图片 / 视频 / 字体 / SDK）
+   - 用户输入校验失败（图片过大 / 格式不支持 / 压缩失败）
+   - 接口调用失败（带 `status_code` + `api_path`）
+   - 异步任务超时（轮询超时 / SDK 初始化超时）
+2. **漏斗损耗诊断**：每个用户可能"半路退出"的节点必须有对应事件
+   - 弹窗 / 浮层主动关闭（区分用户点 X / 点蒙层 / 按 ESC）
+   - 收银台关闭未付费
+   - 登录弹窗关闭未登录
+   - 上传后取消（如果支持）
+3. **拦截 / 限流命中**：所有"挡用户在外"的逻辑都补点
+   - 防白嫖命中 / 投放识别非法重定向 / 接口限流命中
+
+### 补点判定标准
+
+发现某个代码路径满足任一即应补点：
+
+- 一旦出问题，没有埋点你**没法定位是哪一步坏的**
+- 业务上是关键漏斗节点，**未来运营 / 产品会问转化率**
+- 涉及外部依赖（第三方 SDK / CDN / 网关），**线上出问题时埋点是诊断唯一抓手**
+
+### 补点流程
+
+1. 写代码时遇到关键节点，**先在 enum 加事件名 + 注释**，再写业务代码
+2. 事件名同样 snake_case，遵循 `<对象>_<动作>` 或 `<动作>_<状态>` 命名（如 `template_load_fail` / `paywall_close_unpaid`）
+3. 参数 key 同样 snake_case
+4. 在 PR 描述 / dev-scenarios 文档列出「本次主动补点清单」，便于代码评审复查
