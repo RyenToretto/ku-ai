@@ -100,9 +100,11 @@ The new agent should:
 ## Project Slug & Path Reference
 
 ```bash
-slug=$(git remote get-url origin 2>/dev/null \
-       | sed -E 's#.*/([^/]+?)(\.git)?$#\1#' \
-       || basename "$PWD")
+# macOS / Linux 兼容写法 (BSD sed 不支持 +? 非贪婪量词, 改用 basename + 后缀剥除)
+url=$(git remote get-url origin 2>/dev/null)
+slug=$(basename "${url%.git}")
+[ -z "$slug" ] && slug=$(basename "$PWD")
+
 ts=$(date -u +%Y-%m-%dT%H-%M-%SZ)
 mkdir -p ~/.smart_ai/"$slug"
 target=~/.smart_ai/"$slug"/handoff-"$ts".md

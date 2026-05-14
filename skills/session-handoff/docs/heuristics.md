@@ -65,9 +65,10 @@ Two weak signals together = strong. Examples:
 ## Project Slug derivation
 
 ```bash
+# macOS / Linux 兼容 (BSD sed 不支持 +? 非贪婪量词)
 # Preferred: derive from git remote (stable across machines)
-slug=$(git remote get-url origin 2>/dev/null \
-       | sed -E 's#.*/([^/]+?)(\.git)?$#\1#')
+url=$(git remote get-url origin 2>/dev/null)
+slug=$(basename "${url%.git}")
 
 # Fallback 1: workspace folder basename
 [ -z "$slug" ] && slug=$(basename "$PWD")
