@@ -1,6 +1,6 @@
 ---
 name: session-handoff
-description: Take a context-snapshot handoff when the agent self-detects the conversation is approaching token/context limits, WITHOUT interrupting the current task. Writes a structured handoff markdown to ~/.smart_ai/{project}/handoff-{ISO_ts}.md so the user can open a fresh session and resume with minimal context loss. Trigger heuristically (tool-call count, modified-file count, "Previous conversation summary" injection, user-perceived slowness) OR explicitly when the user says "handoff / 交接 / 快爆了 / 新开会话 / 保存进度". MUST run as the LAST step of the current turn — never before the user's actual ask is finished. After writing the handoff, give the user a one-line "open new session with: <prompt template>" guide and STOP. Do not unilaterally end the conversation.
+description: Take a context-snapshot handoff so the user can open a fresh session and resume with minimal context loss. Writes structured markdown to ~/.smart_ai/{project}/handoff-{ISO_ts}.md. Three trigger paths in priority order — (1) MANUAL COMMANDS the user types like `/handoff`, `/snapshot`, `/save-context` (also the trailing-only form `;handoff` / `;snapshot` for quick chained use), or plain phrases "handoff now / snapshot now / save my progress / 交接 / 快照 / 保存进度 / 存档 / 新开会话 / 换个会话" — execute IMMEDIATELY, no confirmation, no heuristics, even if the conversation is short; (2) IMPLICIT phrases like "快爆了 / context full / I want to start a fresh session" — honor as if explicit; (3) HEURISTIC self-check at end of turns that did real work (tool-call count ≥80, modified-files ≥15, "Previous conversation summary" injection, user-perceived slowness). MUST run as the LAST step of the current turn — never before the user's actual ask in the same message is finished (e.g. "do X then /handoff" → do X first). If the manual command carries free-text after it (e.g. `/handoff 想用别的方案重做X`), include that text verbatim in the handoff file's §6 as `💡 用户重定向`. After writing, give the user a one-line "open new session with: <prompt template>" guide and STOP — do not unilaterally end the conversation.
 ---
 
 # Session Handoff Skill
@@ -11,9 +11,56 @@ description: Take a context-snapshot handoff when the agent self-detects the con
 
 ## When to trigger
 
-### Heuristic self-check (run at the END of every turn that did real work)
+Three priority levels. Higher level短路 — once a higher level matches, **do not** also evaluate lower levels.
 
-If ANY of the following is true, perform a handoff:
+### Level 1 — Manual commands (HIGHEST PRIORITY, 0 heuristics, no confirmation)
+
+If the user's message contains ANY of these, trigger handoff IMMEDIATELY. Skip the 7-signal check — they explicitly asked, that's all you need.
+
+#### Slash commands
+- `/handoff`
+- `/snapshot`
+- `/save-context`
+- `/handoff <free-text reason>` — append the reason verbatim to handoff §6 as `💡 用户重定向: ...`
+
+#### Trailing semicolon form (chain-friendly, English/Chinese semicolons)
+- `;handoff`  / `；handoff`
+- `;snapshot` / `；snapshot`
+- Use case: "do X then ;handoff" — finish X, then handoff
+
+#### Plain command phrases (case-insensitive, exact match preferred)
+- `handoff now`
+- `snapshot now`
+- `save my progress`
+- `do a handoff`
+
+#### 中文命令
+- `交接` / `做交接` / `执行交接`
+- `快照` / `保存快照` / `做个快照`
+- `保存进度` / `存档`
+- `新开会话` / `换个会话` / `开新对话` / `新会话继续`
+
+#### Manual-trigger behavior
+
+- **0 启发式判断** — 命中即执行, 不评估 7 信号
+- **不询问 / 不解释为何触发** — 用户主动打的命令本身就是确认
+- **仍要先完成同一条消息里的其他任务** — 例如 `加完 toast 再 /handoff` → 先加 toast + lint, 再 handoff
+- **空消息单独命令立即执行** — 例如用户单独发 `/handoff`, 没有别的内容, 0 延迟动手
+- **有自由文本 reason 必须保留** — 写到 handoff §6 `💡 用户重定向: <原话>`, 这是下一会话最重要的"航向修正"信号
+- **短会话也要执行** — Level 1 不受"会话太短跳过"规则约束 (那条仅约束 Level 3 启发式)
+
+### Level 2 — Implicit triggers (always honor, treat as explicit)
+
+These are not commands but clear intent signals. Honor them as if Level 1, but you MAY add a one-line clarification (e.g. "ok, 我理解为做 handoff, 现在写").
+
+- `快爆了` / `要爆了` / `上下文满了` / `context full` / `running out of context`
+- `想新开一个会话` / `开个干净的会话` / `想换个 chat 继续`
+- `save my progress and let me restart`
+- `I want to start a fresh session`
+
+### Level 3 — Heuristic self-check (END of every turn that did real work)
+
+Only evaluated if **no Level 1 / Level 2 match**. Trigger if ANY signal is true:
 
 | Signal | Threshold | Why |
 |--------|-----------|-----|
@@ -25,15 +72,27 @@ If ANY of the following is true, perform a handoff:
 | You needed to re-read a file you already had in context | yes | Same as above |
 | Conversation turn count | ≥ 30 | Empirical knee of the curve |
 
-If NONE of the above is true, **do not** create a handoff — it's wasteful noise. This is not a per-turn ritual; it's a safety net.
+If NONE of the above is true, **do not** create a handoff — wasteful noise. Level 3 is a safety net, not a per-turn ritual.
 
-### Explicit triggers (always honor)
+### Examples
 
-Always honor any of these user phrases — even if heuristics say otherwise:
+```
+[User]: /handoff
+→ Agent: writes handoff, gives next-prompt path, STOPS. (Level 1, 0 ceremony)
 
-- "handoff" / "交接" / "保存进度" / "新开会话" / "快爆了" / "context full"
-- "save my progress and let me restart"
-- "I want to start a fresh session"
+[User]: 加完最后一个 toast 之后 /handoff
+→ Agent: adds toast, runs lint, then writes handoff. (Level 1 + 同消息任务先做)
+
+[User]: /handoff 我想换 zustand 替代 pinia 重做 store 那一块
+→ Agent: writes handoff with §6 含
+   "💡 用户重定向: 想换 zustand 替代 pinia 重做 store 那一块". (Level 1 + reason)
+
+[User]: 上下文好像快满了, 帮我保存下进度
+→ Agent: "OK, 这就做 handoff" (一句话确认, Level 2) → 写文件 → 给 prompt → STOP.
+
+[User]: (本 turn 改了 18 个文件后) 帮我 commit 一下
+→ Agent: 先做 commit (用户的 ask), 然后 turn 末尾 Level 3 命中 → 加 handoff. (Level 3)
+```
 
 ## What to do (don't break the current task)
 

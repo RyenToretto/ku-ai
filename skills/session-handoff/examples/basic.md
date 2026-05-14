@@ -137,21 +137,122 @@ Do not continue. Do not auto-commit. Wait for user direction.
 - ✅ The agent did not unilaterally end the conversation
 - ✅ Both options (continue here / open fresh) were offered
 
-## Anti-example: what NOT to do
+## Scenario B — Manual command trigger (Level 1)
+
+User wants control over WHEN handoff happens, regardless of heuristics. Maybe they
+just realized they want to switch direction and don't want to lose what's done so far.
+
+```
+[User]: /handoff
+```
+
+Agent response (the entire turn):
+
+> 已写: `~/.smart_ai/fe-picpopop/handoff-2026-05-14T08-08-44Z.md`
+>
+> 新会话第一条粘:
+>
+> ```
+> 读取 ~/.smart_ai/fe-picpopop/handoff-2026-05-14T08-08-44Z.md, 先用 2 句话复述任务和当前进度,
+> 然后从 ⏳ 待办 清单第一项开始。
+>
+> 不要重新跑已经在 ✅ Verification 里标记 verified 的步骤。
+> 不要重读已经在 ✅ Modified Files 里列出的文件。
+> 若上下文还有不清楚的地方, 直接问我, 不要自己脑补。
+> ```
+>
+> 当前会话也可以继续, 看你。
+
+That's it. 0 confirmation, 0 explanation of why now, 0 heuristic check.
+
+## Scenario C — Manual command WITH free-text reason
+
+```
+[User]: /handoff 我想把 store 从 pinia 换成 zustand 重做, 之前的方向先归档
+```
+
+Agent must:
+1. Write handoff as usual
+2. **Critically**: include the user's free-text in §6 verbatim:
+
+```markdown
+## 6. Open Questions
+
+- 💡 **用户重定向**: 想把 store 从 pinia 换成 zustand 重做, 之前的方向先归档
+- ❓ {如果还有其他遗留疑问也列出}
+```
+
+3. The Next Prompt §7 should hint at the redirection:
+
+```
+读取 ~/.smart_ai/fe-picpopop/handoff-{ts}.md, 先用 2 句话复述任务和当前进度.
+
+注意: 用户在 §6 标记了重定向意图 (zustand 重做 store), 不要按 ⏳ 待办 直接做,
+而是先确认重定向方案后再动手。
+```
+
+This way the new session knows to discuss-first-not-execute.
+
+## Scenario D — Trailing semicolon chain
+
+```
+[User]: 加完 toast 再 ;handoff
+```
+
+Agent: adds the toast → runs lint → THEN does handoff. Same end-of-turn placement.
+
+## Scenario E — Implicit Level 2 trigger
+
+```
+[User]: 上下文好像快满了, 先帮我保存下进度吧
+```
+
+Agent (one-line confirmation OK at Level 2):
+
+> OK, 这就做 handoff. (一句话确认, 不进一步追问)
+>
+> [写文件, 给 next-prompt, STOP]
+
+## Anti-examples
+
+### Heuristic 反模式
 
 ```
 > [User]: 也补个 toast 给 cancel 按钮
 > [Agent]: I notice we're at 92 tool calls. Should I do a handoff first?
 ```
 
-❌ Wrong: asks instead of doing. Burns more context. Doesn't address the user's ask.
+❌ asks instead of doing. Burns more context. Doesn't address the user's ask.
 
 ```
 > [User]: 也补个 toast 给 cancel 按钮
 > [Agent]: I'm at the context limit, please open a new session and read this file.
 ```
 
-❌ Wrong: skipped the actual task. User still has no cancel toast.
+❌ skipped the actual task. User still has no cancel toast.
+
+### Manual command 反模式
+
+```
+> [User]: /handoff
+> [Agent]: 你确定要做 handoff 吗? 当前会话还没有命中启发式信号, 是不是太早了?
+```
+
+❌ 用户打 `/handoff` = 已经确认。再问就是把"用户已经发出的命令"当成"建议"——浪费上下文 + 让用户怀疑命令是否生效。**0 confirmation 是 Level 1 的硬规定**。
+
+```
+> [User]: /handoff 想换 zustand
+> [Agent]: 写完了, 路径 X, 下一会话粘 prompt Y. (handoff 文件 §6 没写"想换 zustand")
+```
+
+❌ 丢了 free-text reason。下一会话 agent 看不到用户的方向调整, 会按 ⏳ 待办 直接做错方向。**§6 必须保留用户原话**。
+
+```
+> [User]: 加完 toast 再 ;handoff
+> [Agent]: (立刻 handoff, toast 没加)
+```
+
+❌ 同消息里有任务, 必须先做完任务再 handoff。`;handoff` 后缀语义就是"end of turn"。
 
 ```
 > [User]: 也补个 toast 给 cancel 按钮

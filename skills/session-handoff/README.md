@@ -10,7 +10,7 @@
 | Skill 名称 | `session-handoff` |
 | 来源 | 本地原创 (Cursor 用户场景驱动) |
 | 安装位置 | `~/.agents/skills/session-handoff/` |
-| 触发条件 | 启发式自检 (工具调用 ≥80 / 修改文件 ≥15 / 系统注入摘要 / 用户明示) |
+| 触发条件 | 3 优先级: (1) 用户手动命令 `/handoff` `/snapshot` 等 (2) 隐式表达"快爆了""新开会话"等 (3) 启发式自检 (工具调用 ≥80 / 修改文件 ≥15 / 系统注入摘要) |
 | 依赖 | 无 (纯 Markdown + Shell) |
 | 输出位置 | `~/.smart_ai/{project-slug}/handoff-{ISO-UTC-ts}.md` |
 
@@ -34,7 +34,43 @@ Cursor agent 没有直接读 token 用量的 API, 但长会话有几个明确的
 - **不重复 verified 步骤**: 新会话明确告知"已 verified 的别再跑"
 - **Project slug 稳定**: 优先 git remote URL, fallback cwd basename, 跨机器一致
 
-## 触发自检清单 (任意一条命中即触发)
+## 触发方式 (3 优先级, 高优先级短路)
+
+### Level 1 — 手动命令 (最高优先, 0 启发式, 0 确认)
+
+用户在 chat 里打这些字符串, agent 立刻执行 (即使会话很短):
+
+```
+/handoff
+/snapshot
+/save-context
+/handoff <自由文本 reason>   ← reason 自动写入 handoff §6 §7
+
+;handoff   /  ;snapshot       ← 链式后缀 (英/中文分号都行)
+
+handoff now
+snapshot now
+save my progress
+do a handoff
+
+交接 / 做交接 / 执行交接
+快照 / 保存快照 / 做个快照
+保存进度 / 存档
+新开会话 / 换个会话 / 开新对话 / 新会话继续
+```
+
+**行为**: 0 confirmation, 0 启发式判断, 同消息有任务先做完任务再 handoff, 自由文本 reason 必须保留到 §6。
+
+### Level 2 — 隐式表达 (按 explicit 处理, 可一句话确认)
+
+```
+快爆了 / 要爆了 / 上下文满了 / context full / running out of context
+想新开一个会话 / 开个干净的会话 / 想换个 chat 继续
+save my progress and let me restart
+I want to start a fresh session
+```
+
+### Level 3 — 启发式自检 (兜底, 仅在 Level 1/2 都没命中时评估)
 
 | 信号 | 阈值 |
 |------|------|
