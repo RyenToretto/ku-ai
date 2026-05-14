@@ -26,6 +26,7 @@
 3. commit message 符合项目规范（中文/英文 type 前缀）
 4. 单一主题或主动拆 commit 后的单一主题
 5. 不涉及历史重写
+   - 包含：**同主题立刻迭代修正也走新增 commit, 不 amend**（即使本地未 push）
 
 ### ❌ 给 message 让用户审
 
@@ -72,3 +73,7 @@
 
 - **2026-05-14**: fe-picpopop 项目同一会话连续 3 次问"是否要直接 commit"，用户最终明确说
   「以后不用问，觉着合适就直接 commit，不合适就给 commit msg」→ 立此规则沉淀为全局工作习惯
+- **2026-05-14**: 刚 commit 完用户立刻反悔"还是别用 movieUrl 做 fallback 了"，agent
+  在 amend (history 紧凑) vs 新增 refactor commit (轨迹完整) 之间犹豫并问了一次。用户
+  选「总是新增 commit」，理由：feat 加 → refactor 撤 的演化轨迹本身就是项目知识，即使
+  history 看起来略啰嗦也认。→ 沉淀为「不涉及历史重写」第三条边界

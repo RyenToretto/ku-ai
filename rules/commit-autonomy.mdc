@@ -26,6 +26,7 @@ alwaysApply: true
 4. **不涉及历史重写**
    - 不需要 `--amend` / `rebase` / `force push` 等会改变已 push 历史的操作
    - 如需重写历史，**必须**先问用户
+   - **同主题立刻迭代修正也走新增 commit, 不 amend**（即使本地未 push）—— 保留决策演化轨迹优先于 history 紧凑度（用户 2026-05-14 偏好）
 
 ### ❌ 不要直接 commit（给 message 让用户审）
 
@@ -67,3 +68,4 @@ alwaysApply: true
 ## 历史教训
 
 - 2026-05-14: 同一会话连续 3 次问"是否要直接 commit"，用户最终说「以后不用问，觉着合适就直接 commit，不合适就给 commit msg」→ 沉淀为本规则
+- 2026-05-14: 刚 commit 完用户立刻说"还是别用 movieUrl 做 fallback 了"，agent 犹豫 amend vs 新增 commit。问用户偏好 → 用户选「总是新增 commit」，理由是保留决策演化轨迹（feat 加 → refactor 撤 的轨迹本身就是知识），即使 history 看起来略啰嗦也认。→ 沉淀进上面「不涉及历史重写」第三条
