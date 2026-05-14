@@ -1,0 +1,167 @@
+---
+description: error_code / reason 命名必须 = i18n key 末段 (camelCase), 禁止三元/查表映射
+alwaysApply: true
+---
+
+# Error Code 与 i18n Key 对齐铁律
+
+> **设计目标**: 业务侧 `error_code` / `reason` 字符串值 **= i18n key 末段**, 父组件 / 调用方
+> 直接 `t(\`x.y.${code}\`)` 取文案, **永远不写三元/查表映射**。
+
+## 反面教材 (绝对禁止)
+
+```ts
+// ❌ 子组件 emit 一套语义命名
+emit('pick-error', { error_code: 'unsupported_format' })
+
+// ❌ 父组件再做映射 → tracker 命名 → i18n key
+const MAP = { unsupported_format: 'mime_invalid', too_large: 'raw_too_large' }
+const safe = MAP[payload.error_code] ?? 'compress_failed'
+const errKey = safe === 'mime_invalid'
+  ? 'start.upload.error.mimeInvalid'
+  : safe === 'raw_too_large'
+    ? 'start.upload.error.rawTooLarge'
+    : 'start.upload.error.compressFailed'
+doTips.error(t(errKey))
+```
+
+**为什么禁止**:
+- 三套命名 (子组件 / tracker / i18n) 同义不同名 → 心智负担, 改动易漏
+- 三元链每加一种错误就要改 4 处 (子组件 + 父组件 if + tracker enum + i18n)
+- 容易出现 fallback 错误覆盖真实 case (本仓库 2026-05 真实 bug: `allowed` 数组写错命名,
+  所有 mime/size 错误都被 fallback 到 `compress_failed`, mime toast 永远不弹)
+
+## 唯一正确写法
+
+### 1. 命名约定: error_code 值 = i18n key 末段
+
+```js
+// i18n/locales/en.js
+start: {
+  upload: {
+    error: {
+      mimeInvalid: 'Unsupported file type. Use JPG, PNG, or WEBP.',
+      rawTooLarge: 'Image is too large. Please choose a file under 30MB.',
+      compressFailed: 'Could not process this image. Please try another one.'
+    }
+  },
+  error: {
+    networkError: 'Network error. Please check your connection and try again.',
+    noImage: 'Please upload an image first.',
+    noTemplate: 'Templates are still loading. Please retry in a moment.',
+    imageRejected: 'This image cannot be processed. Please try another photo.',
+    generateFail: 'Generation failed. Please try a different photo.',
+    pollTimeout: 'Generation is taking too long. Please try again.',
+    taskFailed: 'Generation failed. Please try a different photo.',
+    trialUsed: "You've already used your free trial. Sign up to keep going."
+  }
+}
+```
+
+### 2. 子组件 emit / store return 用同名 camelCase
+
+```ts
+// ✅ 子组件
+const emit = defineEmits<{
+  'pick-error': [payload: {
+    error_code: 'mimeInvalid' | 'rawTooLarge' | 'compressFailed'
+    file_size?: number
+    mime_type?: string
+  }]
+}>()
+
+emit('pick-error', { error_code: 'mimeInvalid', file_size: file.size, mime_type: file.type })
+
+// ✅ store
+const submitTrial = async(): Promise<{
+  ok: boolean
+  failCode?: number
+  reason?: 'noTemplate' | 'noImage' | 'networkError'
+}> => {
+  if (!tpl) return { ok: false, reason: 'noTemplate' }
+  if (!userBase64.value) return { ok: false, reason: 'noImage' }
+  try {
+    /* ... */
+  } catch {
+    return { ok: false, reason: 'networkError' }
+  }
+}
+```
+
+### 3. 父组件 / 调用方一行模板字符串
+
+```ts
+// ✅ 上传错误: 一行 pass-through
+function onUploadError(payload: { error_code: 'mimeInvalid' | 'rawTooLarge' | 'compressFailed' }) {
+  startTracker.trackUploadFail(payload)
+  doTips.error(t(`start.upload.error.${payload.error_code}`))
+}
+
+// ✅ 提交错误: reason 与 failCode → camelCase 一致
+const code = submit.reason
+  ?? (submit.failCode === 1 ? 'imageRejected' : 'generateFail')
+doTips.error(t(`start.error.${code}`))
+
+// ✅ 数字 sentinel → camelCase 用 const map (lookup 不是三元)
+const POLL_FAIL_I18N_KEY = { '-1': 'pollTimeout', '-2': 'taskFailed' } as const
+watch(generateFailCode, (next) => {
+  const code = POLL_FAIL_I18N_KEY[String(next) as '-1' | '-2']
+  if (!code) return
+  doTips.error(t(`start.error.${code}`))
+})
+```
+
+### 4. tracker 边界做 case 转换 (兼容历史 BI)
+
+业务侧用 camelCase (= i18n key), tracker 上报值历史是 snake_case (BI dashboard 已建好的字段),
+**只在 tracker 函数内部一行 `toReportCase` 转**, 业务调用方零感知:
+
+```ts
+const toReportCase = (s: string): string =>
+  s.replace(/([A-Z])/g, '_$1').toLowerCase()
+
+const trackUploadFail = (params: {
+  error_code: 'mimeInvalid' | 'rawTooLarge' | 'compressFailed' | 'noFile'
+  /* ... */
+}) => {
+  $attrTracker(TrackerBehaviorEvent.StartUploadFail, {
+    ...params,
+    error_code: toReportCase(params.error_code) // mimeInvalid → mime_invalid 上报
+  })
+}
+```
+
+## 适用条件 (任一即触发)
+
+- 子组件 `defineEmits` 的 payload 含 `error_code` / `reason` / `code` / `status` 等枚举字符串字段
+- store action 返回值含 `reason` / `errorCode` 等枚举字符串
+- 父组件 / 调用方需要把这些值映射到 i18n key 显示给用户
+- 任何"一处 error code → 一处 i18n key"的字符串映射场景
+
+## 自检命令
+
+```bash
+# 找潜在的 error_code/reason 三元映射 (review 重点)
+rg --pcre2 -n "(error_code|reason|code|status)\s*===.*\?\s*['\"][\w.]+['\"]\s*:" app/
+
+# 找 errKey/i18nKey 类的查表/三元变量名 (强嫌疑信号)
+rg -n "(errKey|errorKey|i18nKey|messageKey)\s*=" app/
+
+# 找 record/map 把 'snake_case' map 到 'camelCase' (可能是 case 不一致)
+rg --pcre2 -n "['\"][a-z_]+['\"]\s*:\s*['\"][a-z][A-Z]" app/
+```
+
+理想状态: 业务代码里 error → toast 永远是一行 `doTips.x(t(\`ns.${code}\`))`, 不出现任何 if-else / 三元 / 临时 errKey 变量。
+
+## 例外
+
+- **服务端返回的数字 failCode** (1 / 5 / 6 等业务约定): 数字到 camelCase 名的转换可保留单层
+  ternary 或 const map (例如 `failCode === 1 ? 'imageRejected' : 'generateFail'`), 因为
+  数字 sentinel 是协议常量, 不参与"命名 = i18n key"的对齐
+- **tracker 上报值 case 转换**: 在 tracker 函数内部边界转 (toReportCase), **不算"业务侧映射"**
+
+## 历史教训
+
+- 2026-05 `app/pages/start.vue` `onUploadError` 子→父→tracker→i18n 三套命名导致
+  `allowed` 数组写错 → 所有 mime/size 错误 fallback 成 compress_failed, mime toast
+  永远不弹。改为 camelCase 一致命名 + 模板字符串后 4 处映射全部消失。
