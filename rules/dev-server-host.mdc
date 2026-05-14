@@ -1,0 +1,87 @@
+---
+description: 启动开发服务器后必须以「局域网 IP + 端口」方式访问，禁止使用 localhost / 127.0.0.1
+alwaysApply: true
+---
+
+# 开发服务器访问主机名规范
+
+启动任何项目的本地开发服务器（`npm run dev` / `pnpm dev` / `yarn dev` / `vite` / `next dev` / `nuxt dev` / `python -m http.server` / `php artisan serve` 等）后，**给用户/给 Playwright/给真机/给同事的访问 URL 必须使用本机局域网 IP**，例如 `http://192.168.1.23:3000`。
+
+**禁止**使用 `http://localhost:<port>` 或 `http://127.0.0.1:<port>` 作为访问入口（仅本机回环，无法跨设备访问，且与 Playwright 9222 调试端口的 host 一致时容易引发 CDP 误连）。
+
+## 强制流程
+
+### 1. 启动时让服务监听所有网卡
+
+在启动命令里指定 `--host 0.0.0.0`（或框架等价参数），保证 dev server 同时监听 `127.0.0.1` 与局域网网卡：
+
+| 框架 / 工具 | 推荐启动方式 |
+|-------------|-------------|
+| Vite / Vue CLI | `vite --host 0.0.0.0` 或 `npm run dev -- --host 0.0.0.0` |
+| Nuxt 3 / Nuxt 4 | `nuxt dev --host 0.0.0.0`（或 `HOST=0.0.0.0 npm run dev`） |
+| Next.js | `next dev -H 0.0.0.0 -p 3000` |
+| Webpack Dev Server | `webpack serve --host 0.0.0.0` |
+| Create React App | `HOST=0.0.0.0 npm start` |
+| Express / Koa 自定义脚本 | `app.listen(port, '0.0.0.0')` |
+| Python | `python -m http.server <port> --bind 0.0.0.0` |
+| PHP | `php -S 0.0.0.0:<port>` |
+
+> 框架自身打印的 `Local: http://localhost:3000` 行**不算**给用户的最终 URL，必须再额外打印或回报 `Network: http://<lan-ip>:3000`。Vite / Nuxt 在加 `--host 0.0.0.0` 后会自动打印 Network 行。
+
+### 2. 探测本机 IP（macOS）
+
+按以下顺序拿到当前活动网卡的 IPv4 地址：
+
+```bash
+# 1) 取默认路由对应的网卡名
+iface="$(route get default 2>/dev/null | awk '/interface:/{print $2}')"
+# 2) 取该网卡的 IPv4
+ip="$(ipconfig getifaddr "$iface" 2>/dev/null)"
+# 3) 兜底（Wi-Fi 通常是 en0，外接以太网常见 en1/en6/en7）
+[ -z "$ip" ] && ip="$(ipconfig getifaddr en0 2>/dev/null)"
+[ -z "$ip" ] && ip="$(ipconfig getifaddr en1 2>/dev/null)"
+echo "$ip"
+```
+
+Linux 兜底：`hostname -I | awk '{print $1}'` 或 `ip -4 addr show scope global | awk '/inet/{print $2}' | cut -d/ -f1 | head -n1`。
+
+如果**全部失败**（无网络 / 仅有 loopback），才允许退回 `127.0.0.1`，并显式告知用户「未检测到局域网 IP，已退回回环地址」。
+
+### 3. 给用户/工具的访问 URL 必须用 IP
+
+- ✅ Agent 在响应中提供访问入口时：`http://192.168.1.23:3000/path`
+- ✅ 调用 Playwright `browser_navigate` 时：`url: "http://192.168.1.23:3000/path"`
+- ✅ 复制粘贴给团队 / 真机扫码 / 邮件链接：使用 IP+端口
+- ❌ `http://localhost:3000` / `http://127.0.0.1:3000`
+- ❌ `0.0.0.0:3000`（不是合法的客户端访问地址）
+
+### 4. dev server 已经在跑、但只绑了 127.0.0.1
+
+如果探测到端口已占用，但只监听 loopback（`lsof -i :<port>` 显示 `127.0.0.1:<port>`），**先提示用户**用 `--host 0.0.0.0` 重启，**禁止**直接告诉用户用 `localhost` 凑合。
+
+```bash
+# 检查绑定情况
+lsof -nP -iTCP:<port> -sTCP:LISTEN | awk 'NR>1{print $9}'
+```
+
+输出包含 `*:<port>` 或 `0.0.0.0:<port>` → 已监听全网卡，可直接用 IP；只有 `127.0.0.1:<port>` → 必须重启。
+
+## 为什么这么做
+
+1. **真机/跨设备调试**：移动端、平板、虚拟机、其他同事的电脑都需要从局域网访问当前 dev server，`localhost` 只能本机用
+2. **避开 9222 端口生态歧义**：Playwright Chrome 调试用的就是 `127.0.0.1:9222`，业务 dev server 也用 `127.0.0.1` 时，链接复制粘贴时容易混淆主机名
+3. **Cookie / CORS / WebSocket 与上线一致**：上线域名一定不是 `localhost`，提早用 IP 暴露能更早发现 cookie SameSite / CORS / Mixed Content 问题
+4. **Playwright 自动化**：MCP 在不同 user profile / 容器里跑时，`localhost` 解析行为可能不一致；用 IP 永远确定指向你的开发机
+
+## 自检命令
+
+```bash
+# 在 Agent 回报访问 URL 前，先扫一遍当前响应草稿是否还含有 localhost / 127.0.0.1
+echo "$RESPONSE_DRAFT" | rg -n 'http://(localhost|127\.0\.0\.1):[0-9]+' && echo 'VIOLATION' || echo 'CLEAN'
+```
+
+## 例外
+
+- **健康检查 / 进程内自检脚本**：纯本机回环用途（如 `curl -s http://127.0.0.1:9222/json/version` 探测 Playwright 调试端口）属合法回环用法
+- **CI 环境**：CI 容器内 service 通常通过 `localhost` 互联，本规则只约束「给开发者/真机/Playwright 的访问 URL」
+- **HTTPS / 受 Origin 限制的 OAuth 回调**：若 OAuth 提供方要求 `localhost` 才能回调，按业务需要使用，并在响应中说明原因

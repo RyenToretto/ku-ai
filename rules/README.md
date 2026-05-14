@@ -11,8 +11,9 @@
 | `css-naming.mdc` | CSS class / DOM id 命名约束（根与子元素互不为子串） | true |
 | `dev-scenarios.mdc` | 典型场景日志记录规范（首次操作 / 踩坑修复 / 多步骤流程） | true |
 | `ai-toolkit-docs.mdc` | AI 工具链（MCP / Skill / Rule）文档同步到 ku-ai 仓库 | true |
-| `playwright-chrome.mdc` | Playwright MCP 必须复用日常 Chrome（保留登录态） | true |
+| `playwright-chrome.mdc` | Playwright MCP 必须复用日常 Chrome；调用前先探测 9222 + tab 列表，已有实例严禁再启动 chrome-debug | true |
 | `playwright-artifacts.mdc` | Playwright 临时资源统一收到 `.playwright-mcp/logs/<topic>/` | true |
+| `dev-server-host.mdc` | 本地 dev server 访问 URL 必须用「局域网 IP + 端口」，禁用 localhost / 127.0.0.1 | true |
 
 ## 与项目级规则的关系
 

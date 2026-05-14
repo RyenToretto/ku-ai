@@ -1,5 +1,5 @@
 ---
-description: Playwright MCP 必须复用用户日常 Chrome，禁止启动全新实例
+description: Playwright MCP 必须复用日常 Chrome；调用前先探测 9222 端口与 tab 列表，已有实例严禁再启动 chrome-debug
 alwaysApply: true
 ---
 
@@ -7,30 +7,81 @@ alwaysApply: true
 
 ## 核心原则
 
-Playwright MCP 通过 CDP（Chrome DevTools Protocol）连接 Chrome。必须复用用户日常使用的 Chrome 浏览器实例，保留登录态、localStorage、Cookie 等数据。
+Playwright MCP 通过 CDP（Chrome DevTools Protocol）连接 Chrome。**必须复用**用户日常使用的 Chrome 浏览器实例，保留登录态、localStorage、Cookie 等数据。
+
+任何情况下，**只允许同时存在一个**带 `--remote-debugging-port=9222` 的 Chrome 实例。**严禁**在已有实例的情况下再启动一份新的 `chrome-debug` / 新 `--user-data-dir`。
 
 ## 禁止操作
 
 - **禁止** `--user-data-dir=/tmp/...` 或任何临时目录（会创建空白实例，丢失所有数据）
 - **禁止** `pkill -f "Google Chrome"` / `kill` Chrome 进程（会关闭用户正在使用的浏览器）
-- **禁止** 自行启动新的 Chrome 进程
+- **禁止** 自行执行 `~/bin/chrome-debug` / `open -na "Google Chrome" --args --remote-debugging-port=9222 ...` 等命令启动新 Chrome
+- **禁止** 在已有 9222 实例（端口已就绪）的前提下，再次提示用户「请重启 Chrome / 请运行 chrome-debug」——这会让用户白做一次操作并把已有 tab 全关掉
+- **禁止** "看不到符合预期的 tab 就重启 Chrome" —— 应该用 `browser_tabs` 切换或 `browser_navigate` 复用已有 tab
 
-## 正确流程
+## 调用前强制探测流程（每次调用 Playwright MCP 工具前）
 
-1. **检测调试端口是否就绪：**
+按以下顺序执行，**任何一步未达成才能进入下一步**，绝不跳步直接启动新实例：
+
+### Step 1：探测调试端口是否就绪
 
 ```bash
-curl -s http://127.0.0.1:9222/json/version
+curl -s --max-time 2 http://127.0.0.1:9222/json/version
 ```
 
-2. **若已就绪**：直接使用 Playwright MCP 工具（`browser_navigate` 等）
+- 返回 200 + JSON（含 `Browser` / `webSocketDebuggerUrl` 字段） → 端口已就绪，**进入 Step 2**
+- 返回失败 / 连接拒绝 / 超时 → 端口未就绪，**跳到 Step 4**
 
-3. **若未就绪**：提示用户手动操作——
+### Step 2：列出现有 tab，优先复用
 
-> 请关闭当前 Chrome，然后用以下命令重新启动（会使用你原有的 Profile）：
+调用 `browser_tabs` 的 `list` 动作，查看现有 tab：
+
+- **已有目标 URL（同源 + 同路径）的 tab** → 直接 `browser_tabs` 切换到该 tab，必要时再 `browser_navigate` 到具体路径
+- **没有目标 tab 但有其他 tab** → 在合适的现有 tab 上 `browser_navigate`，或新开一个 tab（`browser_tabs` 的 `new` 动作）；**不要**关掉用户已有 tab
+- **完全没有 tab（极少见）** → `browser_tabs` 的 `new` 动作直接创建一个新 tab
+
+### Step 3：进入正常 Playwright MCP 工具调用
+
+`browser_snapshot` → 操作 → 验证。结束后**不要**关闭浏览器（`browser_close` 仅在用户明确要求时使用）。
+
+### Step 4：端口未就绪时——提示用户手动启动，绝不替代用户操作
+
+向用户输出**简短**提示并停在原地，等用户启动后再继续：
+
+> 当前 Chrome 未开启 `--remote-debugging-port=9222`，请关闭当前 Chrome 后用以下命令重新启动（会复用你原有的 Profile）：
 >
 > ```bash
-> /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222
+> ~/bin/chrome-debug
 > ```
 >
-> 或者在 Chrome 快捷方式/启动配置中永久添加 `--remote-debugging-port=9222` 参数。
+> 或在 Chrome 启动配置中永久添加 `--remote-debugging-port=9222`。完成后再让我继续。
+
+**禁止**：
+- 自行执行上面的命令
+- 在 Step 1 已经返回成功的情况下，仍然输出这段提示
+- 在端口已就绪但「没有看到我想要的 tab」的情况下，输出这段提示
+
+## 与 dev server 的协作
+
+- 业务 dev server 的访问 URL 必须用「局域网 IP + 端口」（详见 `dev-server-host.mdc`），避免和 `127.0.0.1:9222` 混淆
+- `browser_navigate` 的 `url` 参数严禁使用 `http://localhost:<dev-port>` / `http://127.0.0.1:<dev-port>`
+
+## 自检命令
+
+```bash
+# 1. 当前是否已有 9222 实例
+curl -s --max-time 2 http://127.0.0.1:9222/json/version >/dev/null && echo "9222 ready" || echo "9222 missing"
+
+# 2. 是否存在多个监听 9222 的 Chrome 进程（应当 ≤ 1）
+lsof -nP -iTCP:9222 -sTCP:LISTEN 2>/dev/null | awk 'NR>1{print $2}' | sort -u | wc -l
+
+# 3. 当前调试实例的 tab 列表（用于"复用而非重启"判定）
+curl -s http://127.0.0.1:9222/json | python3 -c 'import sys, json; [print(t["url"]) for t in json.load(sys.stdin)]'
+```
+
+## 为什么这么做
+
+1. **保留登录态**：用户的 Google / GitHub / 公司 SSO 等登录态都在日常 Profile 里，重启就丢
+2. **避免重复操作**：每次让用户重启 Chrome 都会打断他正在做的事；端口就绪时直接复用是零成本
+3. **避免端口竞争**：同时跑两个 9222 会让 CDP 连接行为未定义，Playwright 可能命中错的实例
+4. **tab 复用 > 起新 Chrome**：任何「我想要的页面不在」的情况都应该用 `browser_navigate` / `browser_tabs new` 解决，**不需要**也**不应该**重启 Chrome
