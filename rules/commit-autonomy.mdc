@@ -1,0 +1,69 @@
+---
+description: Commit 自主性规则 — 改动合适直接 commit，不合适给 message 让用户审
+alwaysApply: true
+---
+
+# Commit 自主性规则
+
+用户偏好（2026-05-14 立的工作习惯）：**改动完成后不用反复问要不要 commit，agent 自行判断**。
+
+## 行为规则
+
+### ✅ 直接 commit（agent 自主决定）
+
+满足全部条件即直接 commit，不问用户：
+
+1. **改动闭环且不含敏感信息**
+   - 不涉及 `.env` / `credentials.json` / 私钥 / API token 等敏感文件
+   - 所有 lint / tsc / 已有测试都通过（运行验证后再 commit）
+2. **commit message 已规范**
+   - 严格遵循项目内 `git-commit-zh.mdc`（中文 type 前缀）或用户已知的项目规范
+   - 包含「为什么」而非仅「做了什么」
+   - 必要时包含根因、踩坑、影响范围
+3. **改动主题清晰**
+   - 单一主题 / 强相关主题集合
+   - 跨多主题时主动拆 commit（每个主题独立 commit message）
+4. **不涉及历史重写**
+   - 不需要 `--amend` / `rebase` / `force push` 等会改变已 push 历史的操作
+   - 如需重写历史，**必须**先问用户
+
+### ❌ 不要直接 commit（给 message 让用户审）
+
+任一条件即停手，先输出建议 commit message + 改动摘要，让用户判断：
+
+- 改动包含**架构级**调整（删除/重命名核心目录、改 baseUrl、改全局插件加载顺序等）
+- 改动**破坏现有契约**（公开 API 签名变更、删除导出符号、协议字段重命名等）
+- 改动**横跨多个不相关主题**且 agent 自己拿不准拆分边界
+- 改动产生**大文件 / 二进制 / 截图**等可能不该入库的内容
+- lint / tsc / 测试**有报错或新警告**而 agent 暂未修复
+- 涉及 **secrets / .env / credentials** 类文件（即使乍看像配置变更）
+- 用户在同一会话中**前面明确说过"先别 commit"** 或类似拒绝信号
+
+### 模糊地带 → 默认偏向直接 commit
+
+如果不确定但偏简单（< 5 文件、单一主题、lint/tsc 过、message 写得清楚），**默认直接 commit**，不要反复问。
+用户保留 `git reset` / `git revert` 的能力，错了能回滚；反复问反而浪费上下文。
+
+## 输出格式
+
+### 直接 commit 时
+
+执行 `git add` + `git commit -m "<heredoc>"` 后，**在回复里**：
+- 用 1 句话说明 commit 的内容
+- 贴 commit 短 hash + message 第一行（让用户能 spot check）
+- 如果有需要用户后续决策的事项（push / 关联 issue / 跟同事 sync 等），明确列出
+
+### 不 commit 给 message 时
+
+- 先列「为什么不直接 commit」（命中上面 ❌ 的哪一条）
+- 给完整 commit message 草稿（可一行复制到 `git commit -m "..."` 或 heredoc）
+- 等用户决策
+
+## 例外
+
+- 用户**明确说**「等下，先别 commit」 / 「我先 review 一下」 / 「拆成 N 个 commit 我自己来决定顺序」时，**立即停手**
+- 用户**明确说**「这个 commit message 改一下」时，等用户给改后版本，不擅自重写
+
+## 历史教训
+
+- 2026-05-14: 同一会话连续 3 次问"是否要直接 commit"，用户最终说「以后不用问，觉着合适就直接 commit，不合适就给 commit msg」→ 沉淀为本规则
