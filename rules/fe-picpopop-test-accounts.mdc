@@ -1,0 +1,62 @@
+---
+description: Use when running e2e / Playwright login flow / smoke testing fe-picpopop pages that require an authenticated session (sandbox / production / local dev). Provides the dedicated test account credentials and per-environment entry URLs.
+alwaysApply: false
+---
+
+# fe-picpopop 专用测试账号
+
+固定测试账号（沙盒 / 线上 / 本地三环境通用）：
+
+| 字段 | 值 |
+|---|---|
+| Email | `18273727925@163.com` |
+| Password | `m18273727925` |
+| 用途 | E2E / Playwright / 烟雾测试登录态验证 |
+
+## 三环境入口
+
+| 环境 | URL | 备注 |
+|---|---|---|
+| 本地 dev | `http://192.168.167.120:3000` | 按 `dev-server-host.mdc` 用局域网 IP（你机器的实际 IP 可能不同，先用 `ipconfig getifaddr en0` 探） |
+| 沙盒 | `https://www-sandbox.pixpop.ai` | PM 验收环境 |
+| 线上 | `https://www.pixpop.ai` | 慎用，仅做线上回归 |
+
+## 登录路径
+
+`/login`（邮箱 + 密码登录入口）。如需直达受限页面，登录后再 `browser_navigate` 到目标 URL。
+
+## 账号在某环境不可用时的引导
+
+- 服务端反馈"账号未注册" / "密码错误" → **不要**自行注册或改密
+- 直接在响应中告知用户「该账号在 <环境名> 暂不可用，请联系 PM 在该环境完成注册并把同密码激活，或在本对话里给出该环境的临时凭据」
+- 三环境账号必须保持 email + password 一致，禁止为不同环境维护多套凭据
+
+## Playwright 调用骨架
+
+1. 探测 9222 端口就绪（`playwright-chrome.mdc`）
+
+   ```bash
+   curl -s --max-time 2 http://127.0.0.1:9222/json/version >/dev/null && echo READY || echo MISS
+   ```
+
+2. 复用现有 tab，`browser_navigate` 到 `<env-url>/login`
+3. `browser_lock` action: `lock`
+4. `browser_snapshot` 取 input ref → `browser_type`/`browser_fill` email + password → `browser_click` 登录按钮
+5. 等到顶部 nav 出现已登录头像 / 积分文案再 `browser_navigate` 目标页
+6. 截图统一存到 `.playwright-mcp/logs/<topic>/<step>.png`（`playwright-artifacts.mdc`）
+7. 任务收尾：`browser_lock` action: `unlock`；如需手动测文件上传，提示用户跑 `~/bin/mcp-release` 释放文件选择器拦截
+
+## 安全约束
+
+- 该账号仅供 fe-picpopop **测试**用途，不得用于任何对外演示 / 数据导出 / 充值 / 提现操作
+- 三环境密码必须保持同步，不得在不同环境为该账号设置不同密码
+- 密码出现在 git diff / commit message / 公开 issue 时立刻替换并通知 PM
+
+## 自检命令
+
+```bash
+# 项目内除本 rule 文件外不得出现密码明文
+rg -n "m18273727925" --hidden -g '!.git' -g '!.cursor/rules/fe-picpopop-test-accounts.mdc'
+```
+
+输出应为空。如有命中，说明密码被泄露到代码 / 文档 / 日志中，必须立即清理。
