@@ -1,0 +1,86 @@
+---
+description: 分页瀑布流 hasMore 判定规范（兼容服务端 totalSize 不准）
+globs: "**/*.vue,**/*.ts"
+alwaysApply: false
+---
+
+# 分页瀑布流 hasMore 判定规范
+
+> **背景**：本项目部分历史接口（如 `/v1/web/homepage/tags/template`）由于 PM 已确认的历史问题，`totalSize` 字段**不准确**——筛选后实际只有 N 条数据，却返回全量 totalSize（如 430）。
+> 如果前端 `hasMore` 完全依赖 `totalSize`，会陷入"无限翻页 + 重复 append"循环。
+
+## 铁律
+
+任何**分页瀑布流**组件的 `hasMore` 判定**必须**以「**本次返回 `data.length < pageSize` 即终止**」作为总开关，`totalSize` 仅作为辅助上限做 AND 关系判断。**禁止**让 `hasMore` 单独依赖 `totalSize`。
+
+## ✅ 唯一正确写法
+
+```ts
+if (res?.data?.data?.length) {
+  const waitList = res.data.data
+  // 总开关：本次返回 length < pageSize 即视为最后一页，无视 totalSize 是否准确
+  const isLastPage = waitList.length < PAGE_SIZE
+  // 防御性 id 去重：防 race condition / 服务端跨页重复 / 不准的 totalSize 导致命中相同数据
+  const existingIds = toFirstPage
+    ? new Set<string | number>()
+    : new Set(effectList.value.map((e) => e.id))
+  const dedupList = waitList.filter((e) => !existingIds.has(e.id))
+  effectList.value = toFirstPage ? dedupList : [...effectList.value, ...dedupList]
+
+  if (isValidNumber(res.data.totalSize)) {
+    lastTotalSize.value = res.data.totalSize
+    hasMore.value = !isLastPage && effectList.value.length < lastTotalSize.value
+  } else {
+    hasMore.value = !isLastPage
+  }
+}
+```
+
+两条关键不变量：
+
+1. `isLastPage = waitList.length < PAGE_SIZE` 作为 `hasMore` 的**总开关**（短路终止）
+2. append 前按 `id` 去重（防御性兜底，无副作用）
+
+## ❌ 反例
+
+```ts
+// ❌ 完全依赖 totalSize，命中不准的接口会无限翻页
+if (isValidNumber(res.data.totalSize)) {
+  lastTotalSize.value = res.data.totalSize
+  hasMore.value = effectList.value.length < lastTotalSize.value
+} else {
+  hasMore.value = waitList.length === PAGE_SIZE
+}
+
+// ❌ append 时不去重，重复请求会让相同卡片重复出现
+effectList.value = [...effectList.value, ...waitList]
+```
+
+## 为什么这样改是安全的
+
+- **正常接口（totalSize 准确）**：最后一页本来就 `length < pageSize`，新逻辑只比旧逻辑提前一步终止（少一次"空响应"请求），最终展示数据完全一致
+- **totalSize 不准的接口**：首次 `length < pageSize` 直接判定终止，重复请求消失
+- **id 去重的代价**：每页一次 `Set` 构造 + `filter`，pageSize=20 量级 O(n)，零感知
+
+## 适用范围
+
+- `app/components/explore/ExploreWaterfallFlow.vue`
+- `app/components/effect/EffectWaterfallFlow.vue`
+- `app/components/mycreation/MycreationCreationWaterfallFlow.vue`
+- 未来任何新增的分页瀑布流组件 / 滚动加载组件
+
+## 自检命令
+
+```bash
+# 找仅依赖 totalSize 决定 hasMore 的可疑代码
+rg -n "hasMore.*?=.*?\.length\s*<\s*(lastTotalSize|totalSize)" app/
+
+# 找未做 id 去重的 append 写法
+rg -n "effectList\.value\s*=\s*\[\s*\.\.\.effectList\.value\s*,\s*\.\.\.waitEffectList\s*\]" app/
+```
+
+前一条命中位置应当**同时**有 `isLastPage` / `length < PAGE_SIZE` 短路；后一条应命中 `dedupList` 而非裸 `waitEffectList`。
+
+## 历史教训
+
+- 2026-05 PM 反馈：`/v1/web/homepage/tags/template` 接口 `totalSize` 不准（筛选 2 条返回 430），前端 `ExploreWaterfallFlow.vue` 完全依赖 totalSize → 无限请求 + 重复卡片。修复后三个瀑布流组件统一使用本规范。
