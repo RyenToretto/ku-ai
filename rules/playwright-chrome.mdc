@@ -66,6 +66,58 @@ curl -s --max-time 2 http://127.0.0.1:9222/json/version
 - 业务 dev server 的访问 URL 必须用「局域网 IP + 端口」（详见 `dev-server-host.mdc`），避免和 `127.0.0.1:9222` 混淆
 - `browser_navigate` 的 `url` 参数严禁使用 `http://localhost:<dev-port>` / `http://127.0.0.1:<dev-port>`
 
+## File picker 被劫持问题（高频踩坑）
+
+### 现象
+
+agent 跑完一轮 Playwright MCP 后，**用户手动**在 Chrome 里点 `<input type="file">`（任何"上传图片"按钮），**操作系统级文件选择器不弹**——不管是原 tab 还是新开 tab，都打不开。一定要关 Chrome → 重跑 `chrome-debug` 才恢复。
+
+### 根因
+
+Playwright MCP 用 `--cdp-endpoint` 连的是 **Browser-level CDP**，连接后会调：
+
+- `Target.setAutoAttach({ autoAttach: true })` → Chrome 上**任何新 page target 一出现，Playwright 自动 attach**
+- 对 attach 过的每个 page 调 `Page.setInterceptFileChooserDialog(true)` → 该 page 的文件选择器请求被 CDP 截走，**OS 弹窗被压制**
+
+而 Cursor 的 MCP 进程（`npx @playwright/mcp ... --cdp-endpoint http://127.0.0.1:9222`）是**长驻**的，agent 跑完不会自动断 CDP。所以：
+
+- 拦截标志位**永远释放不掉**（直到 target 销毁 / CDP 断连）
+- **新开 tab 也不行**——autoAttach 立刻接管新 target
+- 杀 Chrome 之所以管用，是因为整个 browser process 死了，所有 target 一并销毁
+
+### 解法（按推荐度排序）
+
+#### ① 用户手动测试受阻时——跑 `~/bin/mcp-release`（推荐）
+
+只杀 Playwright / Chrome DevTools MCP 进程，**不动 Chrome**：
+
+```bash
+~/bin/mcp-release
+```
+
+效果：CDP 连接断 → autoAttach 失效 → file chooser 拦截立刻释放。**Chrome 进程、登录态、所有打开的 tab 全部保留**。Cursor 在下次 agent 调用 MCP 时会自动重启进程。
+
+#### ② agent 任务结束时主动收尾（自动化首选）
+
+agent 跑完 Playwright 操作后，如果**预期用户接下来要手动验证文件上传**，必须主动调一次：
+
+- `browser_tabs` action: `close`（关 Playwright 当前 tab，销毁 target）
+
+或显式向用户提示：「我已结束 Playwright 操作。如果你接下来要手动测试上传，请先跑 `~/bin/mcp-release` 释放文件选择器拦截。」
+
+#### ③ 不要让用户重启 Chrome（除非 9222 端口真的没起来）
+
+旧文档让用户重跑 `chrome-debug` 是「核弹解决方案」——会丢所有 tab。能用 `mcp-release` 就**绝不**让用户重启 Chrome。
+
+### 自检命令
+
+```bash
+# 当前是否有活跃的 MCP CDP 客户端 (= 文件选择器有被劫持的风险)
+pgrep -lf 'playwright-mcp|chrome-devtools-mcp|@playwright/mcp' || echo "no MCP client"
+```
+
+输出非空说明 MCP 进程还在持有 CDP 连接，用户此刻手动点 `<input type="file">` 大概率打不开 OS 弹窗。
+
 ## 自检命令
 
 ```bash

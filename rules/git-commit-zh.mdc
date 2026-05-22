@@ -1,0 +1,51 @@
+---
+description: Git 提交信息必须使用中文
+alwaysApply: true
+---
+
+# Git 提交规范
+
+所有 commit message 必须使用中文书写，禁止英文提交信息。
+
+## 格式
+
+```
+<type>: <简要描述>
+
+<可选正文，详细说明变更内容>
+```
+
+## type 前缀（保留英文关键词）
+
+| 前缀 | 含义 |
+|------|------|
+| `feat` | 新功能 |
+| `fix` | 修复缺陷 |
+| `refactor` | 重构（无功能变更） |
+| `chore` | 构建/工具/依赖等杂项 |
+| `style` | 样式调整（不影响逻辑） |
+| `docs` | 文档变更 |
+| `perf` | 性能优化 |
+| `test` | 测试相关 |
+
+## 示例
+
+```
+feat: 新增用户头像上传功能
+
+fix: 修复订阅弹窗中积分说明文案硬编码问题
+
+refactor: 将 options 式 Pinia Store 迁移为 setup 式
+
+chore: 新增 .env.example 环境变量示例文件
+```
+
+## 禁止
+
+```
+# ❌ 全英文
+fix: replace hardcoded text with i18n keys
+
+# ❌ 描述不清
+fix: 修了个bug
+```

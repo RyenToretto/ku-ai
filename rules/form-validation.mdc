@@ -1,0 +1,23 @@
+---
+description: 禁止原生 HTML5 表单验证属性，使用自定义校验
+globs: "**/*.vue"
+alwaysApply: false
+---
+
+# 表单验证规范
+
+严禁使用原生 HTML5 验证属性，所有校验必须通过自定义逻辑实现。
+
+原因：浏览器原生提示与 i18n 多语言系统冲突，且跨浏览器表现不一致。
+
+```html
+<!-- ❌ 禁止 -->
+<input type="email" />
+<input required />
+<input pattern="..." />
+<input minlength="..." />
+<input maxlength="..." />
+
+<!-- ✅ 使用 type="text" + 自定义校验 -->
+<input type="text" />
+```

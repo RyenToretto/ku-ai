@@ -1,0 +1,32 @@
+---
+description: Vue 组件 CSS BEM 命名与样式隔离规范
+globs: "**/*.vue"
+alwaysApply: false
+---
+
+# CSS BEM 命名与样式隔离
+
+- `<style>` 禁止使用 `scoped`，通过 BEM class 嵌套实现样式隔离
+- `<style>` 标签之间不允许有空行
+- 禁止使用 `&` 拼接类名（如 `&-success`、`&__item`、`&--large`），但 `&.active` 这种状态类可以
+- 禁止在 DOM 中使用 tailwindcss 提供的 class
+
+## class 命名规则
+
+- 页面组件根元素必须有 `page-` 前缀 class，如 `class="page-demo"`
+- 非页面组件根元素必须有组件名 class，如 `ExampleHeader.vue` → `class="example-header"`
+- 一级 class 不可被子元素复用，子元素必须另起名字
+
+```css
+/* 页面组件 */
+.page-example {
+  .example-view__head {}
+  .example-view__foot {}
+}
+
+/* 非页面组件 */
+.example-header {
+  .example-hd__wrapper {}
+  .example-hd__core {}
+}
+```

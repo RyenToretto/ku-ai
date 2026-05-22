@@ -1,0 +1,23 @@
+---
+description: i18n 国际化使用规范与多语言 key 管理
+alwaysApply: true
+---
+
+# i18n 使用规范
+
+- 使用多语 key 时，必须检查是否已定义对应的 i18n key，缺失则补充
+- 禁止硬编码文本，所有用户可见文本必须使用 i18n key
+
+## 调用方式
+
+```typescript
+const { t } = useI18n()           // 组件 <script setup> 环境
+const { $i18n } = useNuxtApp()    // composable / 非组件环境
+```
+
+## 多语言文件编辑约束
+
+- 同层级禁止重复 key，已存在则覆盖，不存在才新增
+- 通用文本（按钮、placeholder、通用词汇）必须放 `common` 模块，优先复用 `common.xxx`
+- 不得改变未涉及的 key 或层级结构
+- 编辑后扫描确认无同级别重复 key

@@ -1,0 +1,63 @@
+---
+description: CSS 玻璃感背景 + 渐变描边按钮/卡片的伪元素分层实现规范
+globs: **/*.{vue,scss,css,less}
+alwaysApply: false
+---
+
+# 玻璃背景 + 渐变描边分层
+
+实现「半透明背景 + backdrop-filter + 彩色渐变边框」时，优先使用伪元素分层，不要把玻璃背景和边框混在同一个 `background`/`background-clip` 声明里。
+
+## 标准结构
+
+- 内容层：真实 DOM 子元素，`position: relative; z-index: 2`
+- `::after`：玻璃背景层，`background: rgba(...)` + `backdrop-filter`
+- `::before`：渐变边框层，`linear-gradient(...)` + mask 镂空
+
+```scss
+.glass-cta {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  border: 0;
+  background: transparent;
+}
+
+.glass-cta::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  z-index: 0;
+  border-radius: inherit;
+  background: rgba(0, 0, 0, 0.40);
+  backdrop-filter: blur(2.5px);
+  -webkit-backdrop-filter: blur(2.5px);
+  pointer-events: none;
+}
+
+.glass-cta::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(90deg, #FFCA1D 0%, #FF008C 100%);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+```
+
+## 注意事项
+
+- `::after` 的 `inset` 应等于边框宽度，避免玻璃背景覆盖描边。
+- `pointer-events: none` 必须加在伪元素上，避免遮挡按钮点击。
+- `isolation: isolate` 用于约束层级，防止伪元素与外部 stacking context 互相干扰。
+- Vue/SCSS 中禁止用 `&__xxx` / `&-xxx` / `&--xxx` 拼接类名；伪元素、状态类如 `&::before`、`&.is-active` 可以使用。

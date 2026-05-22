@@ -1,0 +1,28 @@
+---
+description: useTips() 消息提示组合函数使用规范
+globs: "**/*.vue,**/*.ts"
+alwaysApply: false
+---
+
+# useTips() 使用规范
+
+```typescript
+const doTips = useTips()
+
+doTips('一般提示')          // 默认
+doTips.info('信息提示')
+doTips.success('成功提示')
+doTips.error('错误提示')
+doTips.warning('警告提示')
+```
+
+## 强制要求：必须配合 i18n
+
+```typescript
+// ✅ 正确
+doTips.success(t('success.copiedToClipboard'))
+doTips.error(t('error.downloadFailed'))
+
+// ❌ 禁止硬编码
+doTips.success('Copied to clipboard')
+```

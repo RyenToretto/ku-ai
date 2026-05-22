@@ -1,0 +1,175 @@
+# 骨架屏统一规范
+
+> PM 2026-05-18 决议: 全项目所有 loading / 占位 / 数据未到位场景, **必须复用**统一骨架视觉
+> (灰底 + 横向 shimmer 高光扫光), **禁止**再自己拼 background + ::after + 私有 @keyframes。
+> 视觉对齐首页 `ExploreWaterfallFlow`, 这是项目骨架屏的「单一事实来源」。
+
+## 视觉规格 (单一来源)
+
+| 维度 | 值 | 说明 |
+|---|---|---|
+| 底色 | `rgba(255, 255, 255, 0.1)` | 10% 白半透, 对齐项目深色背景 |
+| Shimmer 渐变 | `transparent → rgba(255,255,255,0.13) → transparent` | 横向白色高光扫光, 200% 渐变 |
+| Shimmer 动画 | `skeletonLoading 2s ease-in-out infinite` | 全局 keyframes, 在 `common/animation.scss` |
+| 阴影 | `0 6px 20px rgba(0,0,0,0.28), 0 2px 6px rgba(0,0,0,0.16)` | 提供深度感/悬浮感 (PM 2026-05-19 新增) |
+| 默认圆角 | `16px` | 与 `DoWaterfall .do-wf__item` 一致 |
+| sizing | `width: 100%; height: 100%; position: relative; overflow: hidden` | mixin 默认填满父容器 |
+
+## 唯一允许的使用方式
+
+### 方式 A: SCSS mixin (推荐, 灵活)
+
+`@mixin doSkeleton` 定义在 `app/assets/css/common/mixins.scss`, 通过 vite `additionalData`
+自动 `@use` 注入到所有 `.vue` scoped style, **任何组件直接 `@include doSkeleton()`** 即可:
+
+```scss
+/* 默认 16px 圆角 */
+.my-thing__skeleton {
+  @include doSkeleton();
+}
+
+/* 自定义圆角 (EffectMediaCard 11px / StartTemplateRow 10.386px / 头像 50%) */
+.effect-wf__skeleton {
+  @include doSkeleton(11px);
+}
+
+/* 圆角继承父容器 (典型: DoMediaSkeleton 嵌入任意 media card) */
+.do-media-skeleton {
+  @include doSkeleton(inherit);
+}
+
+/* 嵌入"已有 overflow:hidden 圆角"父容器, 让父裁切 */
+.tpl-cell__skeleton {
+  @include doSkeleton(0); /* 自身圆角 0, 父 overflow 裁切 */
+}
+```
+
+### 方式 B: 工具 class (无需 SCSS 知识, 直接套 DOM)
+
+`.do-skeleton` 工具 class 定义在 `app/assets/css/modules/skeleton.scss`, 通过 `assets/css/index.scss`
+全局 forward, **DOM 直接套 class** 即可, 不需要写一行 SCSS:
+
+```vue
+<div class="do-skeleton"></div>                       <!-- 16px (默认) -->
+<div class="do-skeleton do-skeleton--md"></div>       <!-- 11px -->
+<div class="do-skeleton do-skeleton--sm"></div>       <!--  8px -->
+<div class="do-skeleton do-skeleton--flat"></div>     <!--  0px (嵌套用) -->
+```
+
+## ❌ 禁止 (违规示例)
+
+### 禁止 1: 自己拼骨架样式
+
+```scss
+/* ❌ 不要再自己拼 background + ::after + 私有 keyframes */
+.my-skeleton {
+  width: 100%;
+  height: 100%;
+  border-radius: 12px;
+  background-color: rgba(255, 255, 255, 0.1);
+  position: relative;
+  overflow: hidden;
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, ...);
+    animation: my-private-shimmer 1.5s infinite;
+  }
+}
+
+@keyframes my-private-shimmer {  /* ❌ 重复定义 */
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+```
+
+**修复**: 改用 mixin:
+
+```scss
+.my-skeleton {
+  @include doSkeleton(12px);
+}
+```
+
+### 禁止 2: 用 brand 色 / 霓虹光晕 / 斜向扫光做骨架
+
+旧版 `StartTemplateRow` 的 `skel-neon-shimmer` / `skel-neon-pulse` 是反例 (粉紫霓虹 +
+135° 斜光), 与首页骨架不一致, 已在 2026-05-18 重构清理。骨架就是**灰底**, 不带任何
+brand 装饰; brand 视觉留给"数据加载完成后"的真实卡片。
+
+### 禁止 3: 在 `*.vue` scoped style 里手动 `@keyframes shimmer` / `@keyframes skeletonLoading`
+
+全局已通过 `common/animation.scss` 定义 `@keyframes skeletonLoading`,
+mixin 直接复用。组件本地重复定义会导致 keyframes 被多次 emit, 浏览器虽容错但污染输出。
+
+## 适用范围 (任一即触发)
+
+- 任何"数据加载中, 用占位块假装内容"的 DOM 区块
+- 任何"图片 / 视频 url 尚未到位, 用灰底占位"的 media card
+- 任何"瀑布流 / 网格 / 列表"在 fetch pending 阶段的骨架填充
+- 任何"chip / avatar / button / 小卡片"加载态占位
+
+## 例外 (允许保留私有动画)
+
+- 激光扫描动效 (`LaserRevealCanvas`): 不属于"骨架屏", 是 brand 互动动画, 保留私有 keyframes
+- 数据加载完成后的"卡片悬浮 / focus / 入场"过渡: 不属于"骨架屏", 各组件自由实现
+- 全屏 loading mask (`PixLoading`): 不属于"占位骨架", 走 `pix-loading` 视觉
+- 按钮内 spinner (`do-rotate`): 不属于"骨架", 走 `i-custom-loading` 旋转
+
+## 自检命令
+
+下列任一命中即违规, 必须改用 mixin / 工具 class:
+
+```bash
+# 1. 找自己定义的 shimmer / skeleton keyframes (除全局 animation.scss 外)
+rg -n '@keyframes (shimmer|skeletonLoading|skel-)' app/ -g '!app/assets/css/common/animation.scss'
+
+# 2. 找自己拼 rgba(255, 255, 255, 0.1) 灰底 + ::after shimmer 的本地实现
+rg -n 'rgba\(255,\s*255,\s*255,\s*0\.1\)' app/ -g '!app/assets/css/**'
+# 然后过滤掉已迁移的 .vue (确认未命中即可)
+
+# 3. 找 brand 色霓虹骨架反模式
+rg -n 'skel-neon|neon-shimmer|neon-pulse' app/
+
+# 4. 检查新写组件是否声明了 _自己的_ background-color + animation + linear-gradient 骨架三件套
+rg -n -U 'border-radius:.*\n\s*background-color:.*0\.1\)\s*;[\s\S]{0,200}animation: ' app/
+```
+
+前 3 条输出应为空; 第 4 条若命中, 多半是漏改的骨架, 该改 mixin。
+
+## 历史改造
+
+### 2026-05-18 首轮收敛
+
+| 文件 | 改造前 | 改造后 |
+|---|---|---|
+| `app/components/explore/ExploreWaterfallFlow.vue` | 本地 16px 骨架 (~18 行) | `@include doSkeleton(16px)` |
+| `app/components/effect/EffectWaterfallFlow.vue` | 本地 11px 骨架 (~18 行) | `@include doSkeleton(11px)` |
+| `app/components/do/DoMediaSkeleton.vue` | 双层 div + 本地 `@keyframes shimmer` | `@include doSkeleton(inherit)` (单层) |
+| `app/components/start/StartTemplateRow.vue` | 粉紫霓虹光晕 + 135° 斜扫光 + 2 个本地 keyframes | `@include doSkeleton(10.386px)` |
+
+### 2026-05-19 视觉升级（PM 新要求：阴影+动画）
+
+| 变更 | 内容 |
+|---|---|
+| `doSkeleton` mixin shimmer 渐变 | 从 `rgba(75,55,57,0.05-0.08)` 暗色调改为 `rgba(255,255,255,0.13)` 白色高光，在深色背景上真正可见 |
+| `doSkeleton` mixin 新增 `box-shadow` | `0 6px 20px rgba(0,0,0,0.28), 0 2px 6px rgba(0,0,0,0.16)`，为骨架块提供悬浮感 |
+| `doSkeleton` mixin 动画时长 | `1.5s linear` → `2s ease-in-out`，扫光入出更柔滑 |
+| `ToolsSkeleton.vue` | 内联实现 → `@include doSkeleton(8px)` |
+| `EffectSkeleton.vue` | 内联实现 → `@include doSkeleton(8px)` |
+| `ToolsVideoControllerSkeleton.vue` | 纯灰底无动画 → `@include doSkeleton(4px)` |
+
+## 引入新骨架场景时
+
+1. 新加 DOM 元素 → 优先用 `.do-skeleton` 工具 class
+2. 需自定义圆角 → 在 scoped style 里 `@include doSkeleton(<radius>)`
+3. **绝不**自己写 `@keyframes`/`background-color`/`linear-gradient`/`animation` 四件套
+4. 若觉得 mixin 配方不满足需求, 先在 PR 里讨论扩展 mixin 参数 (不要本地 fork)
+
+## 为什么这么做
+
+1. **视觉一致**: 用户在不同页面都能识别"这是个 loading", 不会被 brand 色霓虹误以为是装饰
+2. **维护成本**: 一处改, 全项目生效; 不用到 N 个 .vue 文件追改
+3. **代码体积**: keyframes / 渐变值复用, scoped style 编译输出更紧凑
+4. **未来扩展**: 想加 `prefers-reduced-motion` 静态降级 / dark mode token / RTL 翻转, 只改 mixin

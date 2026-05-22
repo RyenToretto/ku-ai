@@ -1,0 +1,93 @@
+---
+description: pixpopService 接口出口若包含图片字段必须用 toServerImagePayload 剥 dataUrl 前缀
+globs: "app/pixpopService/**/*.ts"
+alwaysApply: true
+---
+
+# Service 层图片字段处理铁律
+
+> **后端 PM 2026-05 约束**: 服务端不接受 `data:image/jpeg;base64,...` 前缀, 只要 raw base64 body。
+> 凡 `app/pixpopService/Pix*Service.ts` 里**新增**或**修改**接口, body 含 "图片字段" 时必须做 normalize, 否则线上接口 500。
+
+## 适用条件 (任一即触发)
+
+- body 出现 `images: string[]` (任务/批量上传)
+- body 出现 `avatarUrl: string` (单图)
+- body 出现任何形如 `image / imageUrl / coverImage / coverUrl / photoUrl / picUrl / thumbUrl` 等单图字段
+- body 出现含 base64 dataUrl 的字段 (例如未来的 `signature / watermarkImage`)
+
+## 唯一允许的写法
+
+```ts
+import { toServerImagePayload, toServerImagePayloadList } from '~/utils/imageBase64'
+
+// ✅ 数组字段
+async requestXxx(params: SomeCommit) {
+  return this.fetcher('/xxx', {
+    method: 'POST',
+    body: {
+      ...params,
+      images: toServerImagePayloadList(params.images)
+    }
+  })
+}
+
+// ✅ 单值字段
+async requestSaveYyy(body: SaveBody) {
+  return this.fetcher('/yyy', {
+    method: 'POST',
+    body: {
+      ...body,
+      avatarUrl: toServerImagePayload(body.avatarUrl)
+    }
+  })
+}
+```
+
+## 严禁的写法
+
+```ts
+// ❌ 直接透传 dataUrl → 后端 500 Internal Server Error
+return this.fetcher('/xxx', { method: 'POST', body: params })
+
+// ❌ 业务侧手动 strip → 业务持有的 dataUrl 丢失, <img :src> 渲染断
+const cleaned = userBase64.value.replace(/^data:image\/[^;]+;base64,/, '')
+
+// ❌ 在 fetcher / 公共拦截器里做 "魔法" 自动 strip → 副作用不可控, PM 已明确否决
+//   service 层显式声明意图, 既可读也是审计点
+```
+
+## `toServerImagePayload` 行为速记
+
+| 输入 | 输出 |
+|---|---|
+| `data:image/jpeg;base64,/9j/...` | `/9j/...` (剥前缀) |
+| `https://cdn.x/img.jpg` | 原样透传 (My Creation 复用) |
+| `/9j/RAW...` (已是 raw base64) | 原样, 不重复 strip (幂等) |
+| `''` / `undefined` / `null` | `''` |
+
+## Code Review 自检命令
+
+新增/修改 service 方法后, 必跑:
+
+```bash
+# 列出 pixpopService 所有 body 含图片字段、且未 normalize 的接口位置
+rg -n "images|avatarUrl|coverImage|imageUrl|photoUrl" app/pixpopService/ -A 4 \
+  | rg -B 2 "body:\s*\{" \
+  | rg -v "toServerImagePayload"
+```
+
+输出应为空; 若有命中, 必须按上文唯一允许写法补 `toServerImagePayload(List)` 调用。
+
+## 当前已合规接口清单
+
+| Service | 方法 | 字段 |
+|---|---|---|
+| `PixAccountService` | `requestImagePromotionCreate` | `images[]` |
+| `PixAccountService` | `requestSaveAccountInfo` | `avatarUrl` |
+| `PixFeatureService` | `requestCommitI2aTask` | `images[]` |
+| `PixFeatureService` | `requestCommitStartEndTask` | `images[]` |
+| `PixFeatureService` | `requestCommitVideoTemplate` | `images[]` |
+| `PixFeatureService` | `requestGeneratePrompt` | `images[]` (deprecated) |
+
+**新增任何含图片字段的接口必须立即更新本表**, 同时跟随 `image-base64-only.mdc` 主规则的规范。

@@ -1,0 +1,38 @@
+# Mock 数据规范
+
+## 环境开关
+
+- 环境变量 `NUXT_ENABLE_MOCK=1` 启用 mock，写入 `runtimeConfig.useMock`
+- Mock 拦截发生在 `server/utils/proxy.catchall.ts` 的 Nitro 代理层
+
+## 文件组织
+
+- Mock 数据统一放在 `server/mock/data/` 下
+- 目录结构与 API 路由前缀对应：`v1/`、`pay/`、`adjust/`
+- 非分页接口：`{name}.json`
+- 分页接口：`{name}.page-{n}.json`（n 从 1 开始）
+
+## 分页接口约束
+
+- 分页接口**必须采集所有真实页的数据**，不允许只存第 1 页
+- 首次造 mock 数据必须运行 `scripts/capture-mock-data.ts` 从真实 API 采集
+- 分页文件命名严格遵循 `{name}.page-{n}.json` 格式
+- 请求超出实际页码时返回空列表 + 正确的 total
+
+## 路由注册
+
+- 新增 API 接口时**必须**同步更新 `server/mock/registry.ts`
+- 注册表中需标明：match 路径、method、dataPath、是否分页
+- 分页接口需指定 `paginated: true` 及分页参数名
+
+## 数据格式
+
+- Mock JSON **必须保留完整的响应包装结构**（`message.code`、`result`）
+- 禁止修改响应结构使其与真实 API 不一致
+- 真实数据采集后**必须脱敏**：token、密码替换为 `mock-*-xxx` 占位
+
+## 禁止事项
+
+- 禁止在 mock 数据中包含真实用户邮箱、密码、支付信息
+- 禁止在生产环境启用 mock（`NUXT_ENABLE_MOCK` 仅限开发/测试）
+- 禁止手动编造与真实 API 格式不一致的 mock 数据

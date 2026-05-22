@@ -1,0 +1,119 @@
+---
+description: 动效、过渡与 GSAP 使用规范
+globs: "**/*.{vue,scss,css,ts}"
+alwaysApply: false
+---
+
+# 动效与过渡规范
+
+## Vue Transition 命名（已在 `app/assets/css/modules/transition/` 中定义）
+
+| 名称 | 效果 | 时长 |
+|------|------|------|
+| `fade` | 淡入淡出 | 0.2s |
+| `fade-slide` | 淡入 + 水平滑动 | 0.3s |
+| `fade-bottom` | 淡入 + 向下滑动 | 0.25–0.3s |
+| `fade-top` | 淡入 + 向上滑动 | 0.2–0.25s |
+| `fade-scale` | 淡入 + 缩放 | 0.28s |
+| `scale-*` | 缩放系列 | 见 scale.scss |
+| `slide-*` | 滑动系列 | 见 slide.scss |
+| `zoom-*` | 缩放系列 | 见 zoom.scss |
+| `page` | 页面过渡（Nuxt pageTransition） | out-in |
+| `layout` | 布局过渡（Nuxt layoutTransition） | out-in |
+
+新增过渡必须在 `app/assets/css/modules/transition/` 下对应文件中定义，并在 `index.scss` 中 `@forward`。
+
+## GSAP 使用规范
+
+### 必须使用 `useGsap` composable
+
+禁止直接 `import { gsap } from 'gsap'` 后手动管理动画生命周期。统一使用 `useGsap()` composable，它提供：
+
+```typescript
+const {
+  gsap,                  // 原始 GSAP 实例（仅高级场景使用）
+  createAnimation,       // gsap.to 包装（自动纳入生命周期管理）
+  createFromAnimation,   // gsap.from 包装
+  createFromToAnimation, // gsap.fromTo 包装
+  createTimeline,        // 时间线
+  setInitialState,       // 初始状态 + will-change 优化
+  killAll,               // 清理所有动画
+  killAnimationsOf,      // 终止指定目标的 Tween
+  registerPlugin         // gsap.registerPlugin 便捷入口
+} = useGsap()
+```
+
+该 composable 自动在 `onUnmounted` 时清理所有动画和 `will-change` 属性。
+
+日常动画优先使用 `createAnimation` / `createTimeline` 等托管方法；`gsap` 实例仅在需要 `gsap.set()` 降级、`gsap.matchMedia()` 等高级场景时使用。
+
+### ScrollTrigger 使用
+
+```typescript
+import { ScrollTrigger } from 'gsap/ScrollTrigger'
+
+const { registerPlugin } = useGsap()
+registerPlugin(ScrollTrigger)
+```
+
+在 `onUnmounted` 中除了 `killAll()` 还需手动清理 ScrollTrigger：
+
+```typescript
+onUnmounted(() => {
+  ScrollTrigger.getAll().forEach(t => t.kill())
+})
+```
+
+## 性能原则
+
+- 只动画化 `transform` 和 `opacity`（GPU 合成层属性）
+- 禁止动画化 `width`、`height`、`top`、`left`、`margin`、`padding`（触发 layout）
+- 禁止动画化 `box-shadow`、`border-radius`（触发 paint）
+- GSAP 动画结束后清理 `will-change`（`useGsap` 已自动处理）
+- 同屏并发动画不超过 5 个
+- 长列表/瀑布流中的入场动画使用 `IntersectionObserver` 延迟触发
+
+## 设计令牌
+
+| 用途 | 时长 | 缓动 |
+|------|------|------|
+| 微交互（hover、active） | 0.15–0.2s | `ease-in-out` |
+| 元素显隐 | 0.2–0.3s | `ease-in-out` |
+| 页面过渡 | 0.3–0.4s | `ease-in-out` / `power2.inOut` |
+| 复杂编排 | 0.4–0.8s | `power2.inOut` / `power3.out` |
+| 弹性效果 | 0.5–1.0s | `back.out(1.7)` / `elastic.out(1, 0.3)` |
+
+## 无障碍
+
+必须尊重用户的减弱动效偏好：
+
+```scss
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+```
+
+GSAP 动画中也需检查。以下逻辑依赖 `window`，**仅允许在客户端执行**：用 `import.meta.client` 守卫，或放在 `onMounted` / 用户交互回调内（与项目 Nuxt4 规范一致，禁止在 SSR 阶段访问 `window`）。
+
+```typescript
+if (!import.meta.client) return
+const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+if (prefersReducedMotion) {
+  setInitialState(target, finalState) // 直接设置终态，跳过动画
+  return
+}
+```
+
+## 禁止事项
+
+- 禁止在组件中直接 `import gsap` 后不清理（必须用 `useGsap`）
+- 禁止在 SSR 阶段执行动画代码（用 `import.meta.client` 守卫或 `<ClientOnly>`）
+- 禁止无限循环动画不提供暂停/停止机制
+- 禁止使用 CSS `@keyframes` 实现需要精确控制的复杂动画（交给 GSAP）

@@ -1,0 +1,65 @@
+---
+description: 响应式设计策略与双端适配规范
+globs: "**/*.{vue,scss,css,ts}"
+alwaysApply: false
+---
+
+# 响应式设计规范
+
+## 断点体系
+
+项目采用 **单断点 + JS 判断** 的双端方案，非 Tailwind 响应式工具类方案。
+
+| 条件 | 端 | 根字号 | CSS 类 |
+|------|----|--------|--------|
+| `clientWidth < 1024px` | 移动端 | `clientWidth / 3.75` px（rem 缩放） | `.is-mobile` |
+| `clientWidth >= 1024px` | PC 端 | 固定 `16px` | `.is-pc` |
+
+判断逻辑来源：`app/plugins/responsive.client.ts`，与 `nuxt.config.ts` head 内联脚本保持同步。
+
+## CSS 变量（由 responsive 插件注入到 `<html>`）
+
+```css
+--viewport-width       /* 视口宽度 */
+--actual-content-width  /* 减去滚动条的实际内容宽度 */
+--scrollbar-width      /* 滚动条宽度 */
+--design-width         /* 移动端设计稿宽度 375px */
+--scale-ratio          /* clientWidth / 375 */
+--is-mobile            /* '1' | '0' */
+```
+
+## 移动端尺寸单位
+
+- 基准设计稿宽度 **375px**，移动端使用 `rem` 单位自动缩放
+- 换算公式：`设计稿 px / 100 = rem`（因为 `html.fontSize = clientWidth / 3.75`）
+- 例：设计稿 `24px` → `0.24rem`
+
+## 组件拆分策略
+
+- PC 端组件放在常规目录：`app/components/xxx/`
+- 移动端专属组件放 `app/components/mobile/`，以 `Mobile` 前缀命名
+- 在页面或布局中通过 `.is-mobile` / `.is-pc` 条件渲染或 CSS 切换
+
+```vue
+<template>
+  <MobileXxx v-if="isMobile" />
+  <PcXxx v-else />
+</template>
+```
+
+## 禁止事项
+
+- 禁止在 DOM 中使用 Tailwind 响应式前缀工具类（如 `md:flex`、`lg:hidden`），项目不依赖此方案
+- 禁止硬编码 `window.innerWidth < 768` 等自定义断点，统一使用 `1024` 或项目提供的 `isMobile` 判断
+- 禁止移动端使用固定 `px` 单位，必须用 `rem` 确保缩放
+
+## 图片响应式
+
+- 使用 CDN 图片时，通过 URL 参数控制尺寸（如 `?x-oss-process=image/resize,w_750`）
+- `<img>` 必须设置 `width`/`height` 或 CSS 固定宽高比（避免 CLS）
+- 非首屏图片添加 `loading="lazy"`
+
+## 视频响应式
+
+- 使用 `MutedVideo` 组件统一处理，自带懒加载与 defer-render
+- 视频播放并发由 `useVideoPlaybackManager` 全局调度

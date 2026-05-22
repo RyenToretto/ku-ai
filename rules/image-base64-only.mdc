@@ -1,0 +1,171 @@
+---
+description: 用户上传图片必须前端压缩为 base64 ≤ 2MB，不再调用任何上传接口
+globs: "**/*.{ts,tsx,vue,js,jsx}"
+alwaysApply: true
+---
+
+# 图片上传约束：仅 base64，不存在上传接口
+
+服务端已下线所有图片上传接口。前端任何"用户上传图片"的场景都必须：
+
+1. **直接压缩为 base64 data URL**，整串 ≤ **2MB**
+2. **不调用任何上传接口**（包括但不限于 `/file/upload`、`/file/upload/presign`、`/file/get/presign`）
+3. AI 任务/头像等业务字段直接承载 base64 字符串（或回填的远端 URL）
+
+## 强制约束
+
+### 禁止接口/封装
+
+```ts
+//  禁止：调用任何上传接口
+$fetch('/file/upload', { method: 'POST', body: formData })
+$pixBaseService.requestUploadFile(formData)
+$pixBaseService.requestUploadPixFile(file, type)
+$pixBaseService.requestPixUpload(formData)
+$pixBaseService.requestS3SignedUploadLink(...)
+$pixBaseService.requestS3PublicLink(...)
+
+//  禁止：自家后端上传 multipart/form-data
+const fd = new FormData()
+fd.append('file', file)
+$fetch('/xxx/upload', { method: 'POST', body: fd })
+
+//  禁止：手工拼 base64 不走统一压缩工具
+const reader = new FileReader()
+reader.readAsDataURL(file) // 缺少压缩，会超 2MB
+```
+
+### 必须使用统一工具
+
+所有"blob/File → base64"的转换必须通过 `app/utils/imageBase64.ts`：
+
+```ts
+import {
+  compressBlobToBase64Limit,
+  blobToBase64,
+  isBase64DataUrl,
+  isRemoteImageUrl,
+  MAX_BASE64_BYTES
+} from '~/utils/imageBase64'
+
+//  正确：会压缩到 ≤ 2MB
+const { base64, blob, width, height, size } = await compressBlobToBase64Limit(file)
+
+// 头像类小图建议进一步限制边长
+const { base64 } = await compressBlobToBase64Limit(file, { maxSide: 512 })
+```
+
+## 业务字段语义
+
+### AI 任务提交：`PixI2aCommit / PixStartEndCommit / PixVideoTemplateCommit / ParamsImagePromotion`
+
+上游业务侧 (store / composable / component) 持有：
+
+```ts
+images: string[] // 每个元素：
+ // 1) 用户新上传 → "data:image/jpeg;base64,..." 且整串 ≤ 2MB (满足 <img :src> 渲染需要)
+ // 2) My Creation / 模板回填 → 远端 https URL，原样透传
+```
+
+### 用户头像：`ParamsAccountsSave.avatarUrl`
+
+同样的 base64 / URL 二选一约定，新上传必须 base64 且 `maxSide: 512`。
+
+## **强制约束 2:** 接口出口必须 normalize 成 raw base64
+
+> **后端 PM 2026-05 反馈**: 服务端不接受 `data:image/jpeg;base64,...` 前缀，只要 raw base64 body。
+> 前端只在「业务持有」时保留 dataUrl (用于本地 `<img :src>` 预览)，「发往后端」时必须剥前缀。
+
+### 唯一允许的剥前缀方式
+
+```ts
+import { toServerImagePayload, toServerImagePayloadList } from '~/utils/imageBase64'
+
+// 单值字段 (avatarUrl 等)
+body: { avatarUrl: toServerImagePayload(formData.avatarUrl) }
+
+// 数组字段 (images 等)
+body: { images: toServerImagePayloadList(taskForm.images) }
+```
+
+`toServerImagePayload` 行为:
+| 输入 | 输出 |
+|---|---|
+| `data:image/jpeg;base64,/9j/...` | `/9j/...` (剥前缀) |
+| `https://cdn.x/img.jpg` | 原样透传 (远端 URL) |
+| `/9j/RAW...` (已是 raw base64) | 原样, 不重复 strip (幂等) |
+| 空 / undefined / null | `''` |
+
+### 必须放在 `pixpopService/Pix*Service.ts` 出口
+
+```ts
+// ✅ 正确: service 出口拦截, 上游业务保持 dataUrl 不变
+async requestImagePromotionCreate(evt: ParamsImagePromotion) {
+  return this.fetcher('/...', {
+    method: 'POST',
+    body: {
+      ...evt,
+      images: toServerImagePayloadList(evt.images)  // ← 出口处 normalize
+    }
+  })
+}
+
+// ❌ 错误: 在 store / 组件里手动 strip → 业务侧 dataUrl 丢失, <img :src> 渲染断
+const cleaned = userBase64.value.replace(/^data:image\/[^;]+;base64,/, '')
+$pixAccountService.requestImagePromotionCreate({ images: [cleaned], ... })
+
+// ❌ 错误: 直接送 dataUrl 给后端 → 500 Internal Server Error (本次 bug 现场)
+$pixAccountService.requestImagePromotionCreate({ images: [userBase64.value], ... })
+```
+
+### 当前已 normalize 的接口 (覆盖 audit)
+
+| Service | 方法 | 字段 |
+|---|---|---|
+| `PixAccountService` | `requestImagePromotionCreate` | `images[]` |
+| `PixAccountService` | `requestSaveAccountInfo` | `avatarUrl` |
+| `PixFeatureService` | `requestCommitI2aTask` | `images[]` |
+| `PixFeatureService` | `requestCommitStartEndTask` | `images[]` |
+| `PixFeatureService` | `requestCommitVideoTemplate` | `images[]` |
+| `PixFeatureService` | `requestGeneratePrompt` | `images[]` (deprecated) |
+
+**新增任何含图片字段的接口必须立即在 service 出口加 `toServerImagePayload(List)` 调用，并更新本表。**
+
+## 历史记录持久化
+
+`useImageHistoryStore` 已迁移到 IndexedDB（`pix_image_history` 库）：
+
+- `MAX_RECORDS = 5`，记录字段含 `base64`（完整图）+ `thumbBase64`（缩略图）
+- UI 网格预览**只用** `thumbBase64`，避免大 base64 渲染卡顿
+- 选中记录时回调传 `base64`
+
+**禁止**把图片 base64 直接写入 `localStorage`（会撑爆配额）。
+
+## 文件大小兜底
+
+`compressBlobToBase64Limit` 内部已处理，但调用方仍应：
+
+- 在 input 触发后第一时间拒绝 > **30MB** 的原始文件，提示 `error.imageTooLargeForBase64`
+- 压缩失败时提示 `error.compressFailed` / `error.imageProcessFailed`
+
+## 检测命令
+
+```bash
+# 不应再出现的接口路径
+rg -n "/file/upload|/file/get/presign|/file/upload/presign" app/ shared/
+# 不应再出现的服务方法
+rg -n "requestUploadFile|requestUploadPixFile|requestPixUpload|requestS3" app/
+# 不应再出现的裸 readAsDataURL（除 imageBase64.ts 外）
+rg -n "readAsDataURL" app/ -g '!app/utils/imageBase64.ts'
+# 不应再出现的手动 strip dataUrl 前缀 (业务层禁止, 必须走 toServerImagePayload)
+rg -n "data:image\\\\/.*?base64,|\\.replace\\(.*data:image" app/ -g '!app/utils/imageBase64.ts' -g '!app/components/**/*.vue'
+# pixpopService 里凡含图片字段的接口必须用 toServerImagePayload(List)
+rg -n "requestImagePromotionCreate|requestSaveAccountInfo|requestCommit(I2a|StartEnd|VideoTemplate)|requestGeneratePrompt" app/pixpopService/ -A 8 | rg -B 1 "images:|avatarUrl:" | rg -v "toServerImagePayload"
+```
+
+前 4 条输出应为空；最后一条若有命中说明出口未 normalize, 必须补 `toServerImagePayload(List)`。
+
+## 例外
+
+- 远端 https URL 直接作为 `<img :src>` 显示，**不需要**也**不允许**再下载下来转 base64
+- SVG 等装饰性资源走 `app/assets/` + Vite 静态导入，不属于本规则范围

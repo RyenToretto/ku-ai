@@ -469,10 +469,3 @@ methods: {
 ---
 
 新组件写完后建议跟以上范例对照一遍 watch/method 结构。
-
-## 变更历史
-
-- **2026-05-07**：根据 `PlayletWaySelector.vue` 实战经验调整：
-  - 模板从 `:value + @input/@change` 改为 `v-model="currentValue"` 直绑（M9 重定义）
-  - `dispatch('el.form.change')` 从 `watch.modelValue` 移到 `doEmit`（M5 / M7 同步更新），仅在用户主动交互时触发校验
-  - 新增 N7：禁止用 `:value + @change` 包装 `el-radio-group` / `el-checkbox-group`（element-ui `@change` 事件回传 prop 旧值的陷阱）

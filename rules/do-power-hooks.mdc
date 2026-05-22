@@ -1,0 +1,117 @@
+---
+description: "@do-power/hooks 使用规范 — Vue 3 组合式函数库（替代旧的 du-composables tarball 依赖）"
+globs: "**/*.{ts,vue}"
+alwaysApply: false
+---
+
+# @do-power/hooks 使用规范
+
+`du-composables` (file:tar.gz) 已下线，整合到 `@do-power/hooks`（华为云私仓）。
+
+> 切换日期：2026-05-19
+> 同时彻底移除 `du-utils` / `du-composables` / `xh-report` 三个 `file:*.tar.gz` 依赖，统一走华为云私仓的 `@do-power/*` 体系。
+
+## 导入方式
+
+```ts
+// 显式 import（适用于 .ts 工具文件 / non-component 场景）
+import { useDeviceDetect, useEventBus, createEventBus, useDialogState } from '@do-power/hooks'
+import type { EventBusInstance } from '@do-power/hooks'
+```
+
+Nuxt 项目通过 `@do-power/nuxt-module` 自动注册全部 composables，组件 `<script setup>` 内**无需手动 import**：
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  modules: [
+    ['@do-power/nuxt-module', { components: false, directives: false, css: false, composables: true }]
+  ]
+})
+```
+
+```vue
+<script setup lang="ts">
+// 无需 import，下列名字全部 auto-import
+const { isMobile } = useDeviceDetect()
+const { isDomReady } = useDomState(() => loading.value)
+const { refScroller, isScrolling } = useScrollbarStatus()
+const bus = useEventBus<{ refresh: void }>('pricing')
+bus.on('refresh', () => refetch())
+</script>
+```
+
+## `useEventBus` 与 `createEventBus`（带泛型 + SSR fallback）
+
+```ts
+// 复用 scope='default'（最常用，零参调用）
+const bus = useEventBus()
+bus.on('login_success', (data) => console.log(data))
+
+// 复用同一 scope（多组件共享）
+const pricingBus = useEventBus<{ buy: { sku: string } }>('pricing')
+
+// 全新独立实例（不进 scope 缓存）
+const independentBus = createEventBus<{ ping: void }>()
+
+// 类型化
+import type { EventBusInstance } from '@do-power/hooks'
+const myBus: EventBusInstance<{ tick: number }> = createEventBus()
+```
+
+**SSR 行为**：`typeof window === 'undefined'` 时 `createEventBus` / `useEventBus` 返回 no-op 实例（所有方法是空函数），避免在服务端污染状态。
+
+## API 速查（共 18 个 composables / 工厂 / 类型）
+
+### 命名导出
+
+| 名字 | 用途 |
+|---|---|
+| `useLoading` | 简单 loading 状态封装 |
+| `useRequest` | 请求自动管理 loading / error |
+| `usePagination` | 分页状态 |
+| `useClipboard` | 复制到剪贴板 |
+| `useCountdown` | 倒计时 |
+| `useEventBus` / `createEventBus` | 事件总线（带泛型、scope 缓存、SSR fallback） |
+| `useMediaQuery` / `useBreakpoint` | 响应式媒体查询 |
+| `useFullscreen` | 全屏 API |
+| `useInterval` | 定时器 |
+| `useWebSocket` | WebSocket 封装 |
+| `useStorage` | localStorage / sessionStorage 响应式 |
+| `useDeviceDetect` | 设备类型探测（SSR-friendly，支持 ssrUserAgent） |
+| `useIntersection` | IntersectionObserver 共享池（observe / unobserve） |
+| `useDialogState` | 简单 visible 状态（show / hide / toggle） |
+| `usePopover` | 点击外部关闭的浮层 |
+| `useDomState` | DOM 就绪 + 业务依赖就绪联动 |
+| `useScrollbarStatus` / `useParentScrollbarStatus` | 滚动条状态检测 |
+| `useScrollGapSync` | 同步 body padding-right（防滚动条遮挡） |
+| `useResponsiveColumns` | 响应式列数（SSR + ssrUserAgent） |
+| `useResponsiveItemGap` | 响应式 item 间距（按设计稿宽度等比换算） |
+
+### 类型导出
+
+```
+EventBusInstance, EventCallback, IntersectionCallback, IntersectionOptions,
+UseDeviceDetectOptions, ColumnBreakpoints, UseResponsiveColumnsOptions,
+UseResponsiveItemGapOptions
+```
+
+## 升级 / 新增 composable 流程
+
+1. `do-power/packages/hooks/src/` 新增 `useXxx.ts` 文件
+2. `src/index.ts` 显式 `export { useXxx } from './useXxx'`（同时按需 export type）
+3. `do-power/packages/nuxt-module/src/module.ts` 的 `composables` 数组追加 `'useXxx'`
+4. `pnpm changeset` → `pnpm version-packages` → `pnpm release` 发到华为云
+5. fe-picpopop `npm update @do-power/hooks @do-power/nuxt-module`，业务侧立即可裸调
+
+## 自检命令
+
+```bash
+# 不应再出现旧包名引用
+rg -n "from\\s+['\\\"]du-composables['\\\"]" app/ shared/
+
+# 不应再出现旧 tarball 依赖
+rg -n "du-composables-[0-9.]+\\.tar\\.gz" package.json
+```
+
+输出都应为空。

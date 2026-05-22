@@ -1,0 +1,43 @@
+---
+description: CSS calc 中预处理器函数必须使用插值
+globs: "**/*.{vue,scss,sass,less}"
+alwaysApply: false
+---
+
+# CSS calc 函数插值规范
+
+- 在样式代码的 `calc()` 中调用 `doRem` 等预处理器函数时，必须用 `#{...}` 插值包裹函数调用，禁止直接把函数写进 `calc()` 表达式。
+- 在var变量定义代码的 `--some-css-var: #{doRem(3)};` 中调用 `doRem` 等预处理器函数时，必须用 `#{...}` 插值包裹函数调用，禁止直接写函数。
+
+## 强制规则
+
+- `calc()` 内出现 `doRem(...)`、`pxToRem(...)`、`vw(...)` 等编译期函数时，必须写成 `#{函数调用}`
+- 只有原生 CSS 函数 / CSS 变量可以直接写在 `calc()` 中，如 `var(--gap)`、`env(safe-area-inset-bottom)`
+- 新增或修改样式时，发现直接写法必须同步修正
+
+## 示例
+
+```scss
+/* ❌ 错误：函数可能被原样输出或被 calc 解析吞掉 */
+.demo {
+  width: calc(100% - doRem(50));
+}
+
+/* ✅ 正确：先由预处理器计算，再拼入 calc */
+.demo {
+  width: calc(100% - #{doRem(50)});
+}
+
+/* ❌ 错误：函数可能被原样输出或被解析吞掉 */
+--some-css-size: doRem(30);
+
+/* ✅ 正确：先由预处理器计算 */
+--some-css-size: #{doRem(30)};
+```
+
+## 自检命令
+
+```bash
+# 不应命中任何业务样式
+rg -n "calc\\([^;{}]*(doRem|pxToRem|vw)\\(" app/ shared/ -g '*.{vue,scss,sass,less}'
+```

@@ -1,0 +1,48 @@
+---
+description: 项目字体使用规范
+globs: "**/*.{vue,scss,css}"
+alwaysApply: false
+---
+
+# 字体规范
+
+项目统一使用 **Montserrat** 作为主字体，自托管于 `public/fonts/`。
+
+## 字体文件
+
+采用可变字体（Variable Font），仅 2 个文件覆盖全部字重和样式：
+
+| 文件 | 样式 | 字重范围 |
+|------|------|----------|
+| `Montserrat-VariableFont_wght.woff2` | 正体 (normal) | 100–900 |
+| `Montserrat-Italic-VariableFont_wght.woff2` | 斜体 (italic) | 100–900 |
+
+## 可用字重
+
+支持 100–900 任意整数值，推荐优先使用以下常用字重：
+
+| 值 | 字重名 | Tailwind 工具类 | 典型用途 |
+|----|--------|----------------|----------|
+| `400` | Regular | `font-normal` | 正文 |
+| `500` | Medium | `font-medium` | 次级标题、强调文本 |
+| `600` | SemiBold | `font-semibold` | 按钮、导航 |
+| `700` | Bold | `font-bold` | 标题 |
+
+## font-family 规则
+
+- 默认情况下无需手动指定 `font-family`，Tailwind / Nuxt UI 已通过 `--font-sans` 全局配置为 Montserrat
+- 如需指定字体，使用 CSS 变量：`var(--font-family-roboto)`，某些标题使用`var(--font-family-poppins)`
+- 所有 `font-family` 声明必须包含 `Montserrat` 作为首选字体（特殊字体如 monospace、数字、代码、Logo 专用字体除外）
+
+## 特殊例外
+
+以下场景允许不以 Montserrat 为首选：
+- `code` / 代码展示：使用 monospace 字体栈
+- Logo 文字（PixLogo）：`SignPainter-HouseScriptSemibold` 优先
+- 计时器/播放器数字：允许使用 monospace
+
+## 禁止事项
+
+- ❌ 使用 `@nuxt/fonts` 模块加载 Google Fonts（已改为自托管）
+- ❌ 在 `font-family` 中省略 Montserrat（特殊例外除外）
+- ❌ 添加 Google Fonts 的 dns-prefetch / preconnect

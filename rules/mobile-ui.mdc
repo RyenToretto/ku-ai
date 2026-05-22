@@ -1,0 +1,103 @@
+---
+description: 移动端 UI 开发必须精准还原设计稿
+globs: "app/components/mobile/**/*.vue,app/pages/**/*.vue"
+alwaysApply: false
+---
+
+# 移动端 UI 开发规范
+
+## 核心原则：100% 还原设计稿
+
+所有移动端 UI 的颜色、字号、间距、圆角、字重、透明度等必须从设计稿中提取精确值。
+禁止凭感觉估值或使用近似值。
+
+## 开发前必做
+
+1. 打开对应的设计稿图片（`docs/**/**/preview/`）
+2. 打开对应的设计稿代码，（`docs/**/**/link/`）可能有json数据可以找到
+3. 逐像素比对每个元素的：位置、大小、颜色、字号、字重、间距、圆角、透明度
+
+## 色值提取规则（最高优先级）
+
+**禁止从 PNG 截图目测颜色。** 必须从设计稿源数据提取精确值。
+
+### 提取方式（按优先级）
+
+1. **解析 `docs/**/**/index.html`**
+   该文件是 Sketch Measure 导出的标注文件，包含完整的图层 JSON 数据。
+   每个图层有精确的 `fills`（背景色）、`css`（color/background/opacity）、`rect`（尺寸位置）。
+   可用脚本解析 `let data = {...}` 中的 JSON，按 artboard name 和 layer name 提取。
+
+2. **查看 `docs/**/**/links/*.html`**
+   每个页面对应一个 HTML 链接文件，跳转到 index.html 的对应画板。
+
+3. **对照 `docs/**/**/preview/*.png`**
+   PNG 仅用于视觉确认布局和效果，不作为色值来源。
+
+### 提取示例
+
+```python
+# 从 index.html 提取指定画板的图层色值
+import json, re
+with open('docs/**/**/index.html') as f:
+    content = f.read()
+match = re.search(r'let data = ({.*?});\s*\n\s*meaxure', content, re.DOTALL)
+data = json.loads(match.group(1))
+for ab in data['artboards']:
+    if '目标画板名' in ab['name']:
+        for layer in ab['layers']:
+            print(layer['name'], layer.get('css'), layer.get('fills'))
+```
+
+## 禁止
+
+- 禁止不看设计稿直接写样式
+- 禁止用「大概」「差不多」的值
+- 禁止用与设计稿不同的颜色（如设计稿是 `#ff317d` 不能写 `#ff3386`）
+- 禁止凭经验推测色值（如「深色背景大概是 #1c1c2e」），必须从设计稿取色
+- 禁止改变元素在设计稿中的相对位置关系
+- 禁止自行决定弹层/抽屉的弹出方向、位置、背景样式，必须按设计稿
+
+## 弹层 / Drawer / Bottom Sheet 规范
+
+实现任何弹层组件前，必须确认设计稿中以下细节并严格还原：
+
+1. **弹出方向**：从底部、从右侧、居中弹出 — 按设计稿，不能自行决定
+2. **面板尺寸**：占屏幕百分比（如底部弹出占 75% 高度），从设计稿测量
+3. **面板圆角**：顶部圆角大小（如 Bottom Sheet 顶部 20px 圆角）
+4. **遮罩背景**：半透明黑色的透明度值、是否有 blur 模糊效果
+5. **面板背景色**：深色/浅色/渐变，具体色值从设计稿取
+6. **关闭按钮**：位置（左上/右上）、样式（X 图标/箭头）、大小
+7. **动画方向**：与弹出方向一致（底部弹出 = translateY 进出）
+8. **内容布局**：卡片、列表、按钮的间距和排列方式严格按设计稿
+9. **安全区**：底部弹出需考虑 safe-area-inset-bottom
+
+```html
+<!-- 示例：底部弹出式面板 -->
+<Transition name="mobile-sheet-up">
+  <div v-if="open" class="overlay" @click.self="close">
+    <div class="panel">
+      <!-- 从底部弹出，圆角顶部，深色背景 -->
+    </div>
+  </div>
+</Transition>
+
+<!-- 对应动画：从底部滑入/滑出 -->
+<style>
+.mobile-sheet-up-enter-from .panel,
+.mobile-sheet-up-leave-to .panel {
+  transform: translateY(100%);
+}
+</style>
+```
+
+## 验证
+
+每个组件完成后必须与设计稿逐细节对比确认，包括但不限于：
+- 元素间距是否精确
+- 颜色是否匹配
+- 字号和字重是否正确
+- 圆角是否一致
+- 透明度是否匹配
+- fixed/sticky 定位是否与设计稿行为一致
+- 弹层弹出方向、面板位置、遮罩样式是否与设计稿一致

@@ -1,0 +1,96 @@
+---
+description: app/layouts/ 仅允许 default.vue 一个文件
+alwaysApply: true
+---
+
+# Layouts 单文件约束
+
+`/app/layouts/` 目录下**仅允许存在 `default.vue` 一个文件**，禁止新增任何其他 layout 文件。
+
+## 为什么
+
+- 多 layout 容易导致页面壳子割裂、共享 header/footer/全局弹层重复挂载。
+- Nuxt auto-import + 文件即路由的简洁性，layout 维度收敛在 default。
+- 特殊页面（投放承接页、空白页、纯弹层页等）的"非默认壳子"应在 **page 本体**用 `layout: false` + 内联结构实现，避免跨页扩散。
+
+## 强制约定
+
+### 1. 新页面壳子方案
+
+| 场景 | 写法 |
+|------|------|
+| 走默认 layout (含 PixHeader / mobile drawers) | `definePageMeta({ layout: 'default' })` 或不写（默认就是 default） |
+| 完全自定义壳子（无主站 header / 自定义背景 / 自定义 top bar） | `definePageMeta({ layout: false })` + 在 `<template>` 顶部内联壳子结构 |
+| 想复用 X 页面的壳子 | 把壳子做成**组件**（`app/components/xxx/`），不是 layout |
+
+### 2. 禁止操作
+
+```ts
+// ❌ 禁止：新增 layout 文件
+// app/layouts/start.vue
+// app/layouts/promotion.vue
+// app/layouts/blank.vue
+```
+
+```vue
+<!-- ❌ 禁止：在 page 里 layout 名字非 default / false -->
+<script setup>
+definePageMeta({ layout: 'promotion' })  // 不存在的 layout, 会报错
+</script>
+```
+
+### 3. 正确示例（投放承接页 /start）
+
+```vue
+<!-- app/pages/start.vue -->
+<template>
+  <div class="page-start" :class="{ 'is-pc-stage': !isMobile }">
+    <a href="#main-content" class="page-start__skip-link">跳转到主内容</a>
+
+    <!-- 自定义霓虹背景 -->
+    <ClientOnly>
+      <div v-if="!isMobile" class="page-start__aura" aria-hidden="true">
+        <div class="aura__halo aura__halo--tl"></div>
+        ...
+      </div>
+    </ClientOnly>
+
+    <!-- 自定义 main -->
+    <main id="main-content" class="page-start__stage-wrap" tabindex="-1">
+      <StartTopBar />
+      ...
+    </main>
+  </div>
+</template>
+
+<script setup>
+definePageMeta({
+  layout: false  // ✅ 不走 default, 自带壳子
+})
+
+const { isMobile } = useDeviceDetect()
+const { locale } = useI18n()
+useHead({ htmlAttrs: { lang: locale.value } })
+</script>
+```
+
+### 4. 重构信号
+
+如果你发现自己想新建 `app/layouts/<name>.vue`：
+
+- 先问：能否把"壳子部分"抽成组件放 `app/components/<name>Shell.vue`，让多个 page 都 import？
+- 或：能否直接把壳子内联到 page 本身（仅 1 个 page 用的情况）？
+- 大多数情况下，答案都是「能」。
+
+## 自检命令
+
+```bash
+# 任何 layouts 下非 default.vue 文件都视为违规
+find app/layouts -maxdepth 1 -type f -name '*.vue' ! -name 'default.vue'
+```
+
+输出应为空。如有结果，必须迁回 page 内联或抽组件。
+
+## 例外
+
+无。如确需打破，**先提 RFC**修改本规则，并同步给团队 review。

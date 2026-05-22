@@ -1,0 +1,73 @@
+---
+description: 前端性能优化规范
+globs: "**/*.vue"
+alwaysApply: false
+---
+
+# 前端性能规范
+
+## 图片
+
+- 使用 WebP 格式，CDN 提供自动转换
+- `<img>` 必须设置 `width`/`height` 或 CSS 固定尺寸（避免 CLS）
+- 非首屏图片使用 `loading="lazy"`
+- 纯装饰图片用 `alt=""`
+- **禁止对弹窗/抽屉/顶栏内立即可见的小图标使用 `loading="lazy"`**：打开时即在视口内的图标（如登录按钮图标、金币图标）lazy 收益为零，反而在弱网下闪烁
+- 首屏 LCP 候选图片使用 `fetchpriority="high" loading="eager"`
+
+## 组件加载
+
+- 大型弹窗/模态框组件使用 `<ClientOnly>` 包裹
+- 非关键路径组件使用 Nuxt 的 `<LazyXxx>` 前缀实现懒加载
+- `app.vue` 中的全局弹窗**必须**使用 `<LazyDialogXxx />`，禁止直接写 `<DialogXxx />`——后者会被同步打入主 chunk
+- 首屏关键组件不要懒加载
+- 禁止使用 `defineAsyncComponent` 手动包装已在 `components/` 下的组件，Nuxt `Lazy` 前缀已内置此能力
+
+## 响应式数据
+
+- 大型只读列表用 `shallowRef` 替代 `ref`（避免深层响应式追踪）
+- 计算属性应保持纯函数，避免副作用
+- `watch` 回调中避免重复触发异步请求，使用 `watchDebounced`
+
+## 视频
+
+- 瀑布流视频必须使用 `MutedVideo` 组件的 `lazy-load` + `defer-render` 模式
+- 禁止在页面中直接使用 `<video autoplay>` 标签
+- 视频播放并发由 `useVideoPlaybackManager` 全局调度，不要手动控制
+
+## 动态 Import
+
+- 大型第三方库（hls.js / jszip 等）使用 `await import()` 动态加载，不阻塞主 bundle
+- 动态 import 结果**允许**缓存到**模块级**变量（`<script>` 区域），因为同一个库只需加载一次
+- 竞态版本号（用于判断 import 完成后当前调用是否仍有效）**必须**声明在 `<script setup>` 内（实例级），禁止放在模块级——否则多个组件实例共享计数器会互相干扰
+
+```typescript
+// ✅ 正确：Lib 模块级缓存，version 实例级
+<script lang="ts">
+let Lib: typeof import('lib').default
+</script>
+<script setup lang="ts">
+let loadVersion = 0
+async function load(url: string) {
+  const v = ++loadVersion
+  if (!Lib) Lib = (await import('lib')).default
+  if (v !== loadVersion) return // 仅校验本实例的版本号
+  // ...
+}
+</script>
+```
+
+## 异步重试
+
+- 带 `setTimeout` 的轮询/重试逻辑**必须**设置最大次数或总超时，禁止无限重试
+- 第三方 SDK 可能被广告拦截器屏蔽，重试上限建议 ≤ 10 次
+- 多次调用共享同一异步资源时（如等待 SDK 加载），使用**队列 + 单轮询**模式：未就绪时入队，就绪后 flush；禁止每次调用各自 setTimeout 重试
+
+## 错误状态
+
+- 设置 `hasError = true` 时**必须同时**设置 `errorMessage`，禁止出现"有错误状态但无提示文案"的情况
+
+## 事件监听
+
+- 全局事件（scroll/resize）必须节流或防抖
+- `onUnmounted` 中必须移除所有手动添加的事件监听

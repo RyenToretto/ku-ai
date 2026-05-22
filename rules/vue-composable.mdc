@@ -1,0 +1,62 @@
+---
+description: Vue Composable 编写与调用规范
+globs: "app/composables/**/*.ts,app/plugins/**/*.ts,app/components/**/*.vue,app/pages/**/*.vue"
+alwaysApply: false
+---
+
+# Composable 编写规范
+
+## 命名
+
+- 文件名和导出函数必须以 `use` 前缀开头
+- 不以 `use` 开头的工具函数应放在 `app/utils/` 目录
+
+## 返回值
+
+- 返回响应式数据用 `ref`/`computed`（而非 `reactive`），方便解构
+- 返回对象而非数组，保持可扩展性
+
+```typescript
+// ✅ 正确
+export function useCounter(initial = 0) {
+  const count = ref(initial)
+  const increment = () => { count.value++ }
+  return { count, increment }
+}
+
+// ❌ 避免
+export function useCounter() {
+  return [count, increment] // 数组不可扩展
+}
+```
+
+## 生命周期
+
+- composable 内可使用 `onMounted`/`onUnmounted` 等生命周期钩子
+- 必须在 `onUnmounted` 中清理副作用（定时器、事件监听、Observer 等）
+- 全局单例 composable 使用模块级变量存储状态
+
+## 调用上下文
+
+- Nuxt composable（`useRuntimeConfig`、`useNuxtApp`、`useScriptXxx` 等）**只能**在 setup 同步执行阶段或其他 composable 内调用
+- **禁止**在 `setTimeout` / `setInterval` / Promise `.then()` 回调中调用 Nuxt composable——此时 Nuxt 上下文已丢失
+- 如需在异步回调中使用，必须在 setup 阶段提前获取引用并缓存到局部变量
+
+```typescript
+// ✅ setup 阶段缓存
+const config = useRuntimeConfig()
+const gtagScript = useScriptGoogleAnalytics()
+setTimeout(() => {
+  const gtag = gtagScript?.proxy?.gtag // 使用缓存引用
+}, 500)
+
+// ❌ 延迟回调中调用 composable
+setTimeout(() => {
+  const config = useRuntimeConfig() // 上下文已丢失，报错或行为异常
+}, 500)
+```
+
+## 禁止
+
+- 禁止在 composable 中手动 import `ref`/`computed` 等（Nuxt auto-import）
+- 禁止在 `shared/` 目录下放 composable（`shared/` 是 server/client 共享）

@@ -1,0 +1,38 @@
+---
+description: TypeScript 严格编码规范
+globs: "**/*.ts,**/*.vue"
+alwaysApply: false
+---
+
+# TypeScript 严格编码规范
+
+## 类型安全
+
+- 优先用 `unknown` + 类型守卫替代`any`
+- 优先使用 `interface` 而非 `type`（可扩展、可合并）
+- 函数参数和返回值必须显式标注类型
+- 使用 `as const` 替代 `enum`（tree-shaking 友好）
+
+## 命名约定
+
+- 接口名用 PascalCase，不加 `I` 前缀
+- 类型参数用单大写字母：`T`, `K`, `V`
+- 布尔变量用 `is/has/should/can` 前缀
+
+```typescript
+// ✅ 正确
+interface UserProfile {
+  id: string
+  isActive: boolean
+}
+
+// ❌ 禁止
+const data: any = fetchData()
+type IUser = { id: string }
+```
+
+## 函数风格
+
+- 优先使用箭头函数（组合式 API 内）
+- 避免超过 3 个参数，多于 3 个用对象参数
+- 异步函数必须处理错误（try/catch 或 .catch）

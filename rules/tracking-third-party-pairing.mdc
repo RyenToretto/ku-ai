@@ -12,7 +12,44 @@ PM 强制要求：**除 FB 标准事件 `PageView` 以外，任何第三方上�
 1. **业务上报优先**：先调用 `$xhTracker` / `$attrTracker`，再调用第三方 SDK
 2. **同 hook 封装**：业务 + 第三方上报**必须**在同一个 composable / hook 内一次性触发，调用方只见一次入口
 3. **事件名 snake_case 镜像**：第三方平台用 `PascalCase` 标准事件名（FB `InitiateCheckout`），业务上报必须用全小写下划线分割（`initiate_checkout`）
-4. **跨平台对齐**：FB 自定义事件名 / 悬壶事件名 / xh 事件名应**复用同一字符串**（如 `upload_success` 全平台统一）
+4. **FB 通道按白名单严格分流**（PM 2026-05 硬约束，违反则数据失真）：
+   - **FB 官方标准事件白名单**走 `fbq('track', '<StandardEventName>')`
+   - **非白名单的所有自定义事件**（业务自命名）一律走 `fbq('trackCustom', '<PascalCase>')`，事件名保 PascalCase
+   - 后续如果新增非标准事件（PM 提任意名字, 例如 `Generate` / `Share`），开发者**必须**使用 `trackCustom` 通道；**绝不允许**用 `fbq('track', '<非白名单>')` 走 SDK 兜底，否则 FB 后台会把它识别为"未知标准事件"导致优化目标错配。
+
+### FB 官方标准事件白名单（FB Pixel Standard Events，截至 2026-05）
+
+下面这些事件名**只能**通过 `fbq('track', ...)` 上报：
+
+| 事件名 | 场景 | 本项目使用 |
+|---|---|---|
+| `PageView` | 页面浏览 | ✅ plugin 自动 |
+| `ViewContent` | 浏览关键内容/页面 | ✅ `useStartTracker.trackLandingView` |
+| `Search` | 站内搜索 | — |
+| `AddToCart` | 加购物车 | — |
+| `AddToWishlist` | 加心愿单 | — |
+| `InitiateCheckout` | 开始结账（点击 buy） | ✅ `useStartTracker.trackClickPay` + `usePricingTracker.trackPaywallBuyClick` |
+| `AddPaymentInfo` | 填写/进入支付信息 | ✅ `usePricingTracker.trackHppRedirectInitiated` |
+| `Purchase` | 支付完成 | ✅ `usePricingTracker.trackPurchaseSuccess` |
+| `Subscribe` | 订阅型购买成功 | ✅ `usePricingTracker.trackPurchaseSuccess` (与 Purchase 双发) |
+| `StartTrial` | 启动免费试用 | ✅ `useStartTracker.trackGenerateSuccess` (/start 首次生成成功) |
+| `Lead` | 留资（邮箱订阅/联系商家成功等） | ✅ `useLandingTracker.trackFooterEmailSubmit` + `trackContactUsSubmit` |
+| `CompleteRegistration` | 完成注册 | ✅ `useRegisterTracker.trackSignUpSuccess*` |
+| `Contact` | 联系商家 | — (统一走 Lead) |
+| `CustomizeProduct` | 自定义产品 | — |
+| `Donate` | 捐赠 | — |
+| `FindLocation` | 寻找门店 | — |
+| `Schedule` | 预约 | — |
+| `SubmitApplication` | 提交申请 | — |
+
+### 非白名单自定义事件（项目内）
+
+| FB 事件名 (PascalCase) | 业务对（snake_case）| 触发 hook |
+|---|---|---|
+| `Upload` | `upload_success` | `useStartTracker.trackUploadSuccess` |
+| `Login` | `login_success` | `useLoginTracker` + `useRegisterTracker` |
+
+**铁律**：新增任意非白名单事件，**必须**在 `useFacebookTracker.ts` 内使用 `$fbTrackerCustom(...)`（即 `fbq('trackCustom', ...)`），并在本表追加一行。审计 grep 见后文。
 
 ## 强制流程
 
@@ -26,17 +63,22 @@ PM 强制要求：**除 FB 标准事件 `PageView` 以外，任何第三方上�
 
 ### 第三方上报与业务上报的事件名映射表
 
-| 第三方平台 | 标准事件名（保留原样）| 业务上报事件名（snake_case） |
-|---|---|---|
-| FB Pixel | `ViewContent` | `landing_view` / `content_view` 等业务语义名 |
-| FB Pixel | `InitiateCheckout` | `click_pay` / `initiate_checkout` |
-| FB Pixel | `Purchase` | `purchase` |
-| FB Pixel | `CompleteRegistration` | `sign_up` / `complete_registration` |
-| FB Pixel | `AddToCart` | `add_to_cart` |
-| FB Pixel 自定义 | `upload_success` | `upload_success`（同名复用）|
-| FB Pixel 自定义 | `login_success` | `login_success`（同名复用）|
+| 第三方平台 | FB 通道 | 第三方事件名（保留原样）| 业务上报事件名（snake_case） | 触发 hook |
+|---|---|---|---|---|
+| FB Pixel | `track` | `PageView` (白名单, 不需配对) | — | `app/plugins/00_a2_pixel.client.ts` (初始化时一次) |
+| FB Pixel | `track` | `ViewContent` | `landing_view` | `useStartTracker.trackLandingView` |
+| FB Pixel | `trackCustom` | `Upload` | `upload_success` | `useStartTracker.trackUploadSuccess` |
+| FB Pixel | `trackCustom` | `Login` | `login_success` | `useLoginTracker.trackLoginSuccessEmail/Google` + `useRegisterTracker.trackSignUpSuccessEmail/Google` |
+| FB Pixel | `track` | `InitiateCheckout` | `click_pay` | `useStartTracker.trackClickPay` + `usePricingTracker.trackPaywallBuyClick` |
+| FB Pixel | `track` | `Purchase` | `purchase` | `usePricingTracker.trackPurchaseSuccess` |
+| FB Pixel | `track` | `CompleteRegistration` (历史投放保留) | `sign_up` | `useRegisterTracker.trackSignUpSuccessEmail/Google` |
 
-> 业务事件名优先采用项目内已有的 `TrackerBehaviorEvent` / `TrackerKeyEvent` enum 值。若 PM 文档未定义，则按标准事件名转 snake_case 兜底（`InitiateCheckout` → `initiate_checkout`）。
+> **PM 2026-05 通道规则**:
+>  - **FB 标准事件白名单**(PageView / ViewContent / InitiateCheckout / Purchase / CompleteRegistration 等内置事件名) 走 `fbq('track', <PascalCase>)`
+>  - **非白名单自定义事件**(Upload / Login 等业务自命名事件) 走 `fbq('trackCustom', <PascalCase>)`, 在 FB Ads Manager 后台需登记为 Custom Event 后才能投放使用
+>  - 事件名一律 **PascalCase** (与悬壶 snake_case 形成"同义不同形"映射)
+>
+> 业务事件名优先采用项目内已有的 `TrackerBehaviorEvent` / `TrackerKeyEvent` enum 值。若 PM 文档未定义，则按 PM 命名转 snake_case 兜底（`InitiateCheckout` → `initiate_checkout`）。
 
 ## ✅ 合规示例
 
@@ -81,15 +123,37 @@ function trackPaySuccess() {
 }
 ```
 
-### 示例 B：FB 自定义事件 + 业务行为事件（snake_case 同名）
+### 示例 B：FB Custom Event + 业务行为事件（PascalCase fb 名 ↔ snake_case 业务名 "同义不同形"）
 
 ```typescript
 // app/composables/useStartTracker.ts
 const trackUploadSuccess = (params: { file_size: number; mime_type: string }) => {
   $attrTracker(TrackerBehaviorEvent.UploadSuccess, { status: 'success', ...params })
+  // fbTracker.trackUploadSuccess 内部走 fbq('trackCustom', 'Upload', ...) Custom Event 通道
   fbTracker.trackUploadSuccess({ content_category: 'photo', ...params })
 }
 ```
+
+### 示例 C：跨业务 hook 共用 (登录/注册都报 fb Login)
+
+```typescript
+// app/composables/useLoginTracker.ts (主站普通登录路径)
+const trackLoginSuccessEmail = (userType: 'new' | 'returning') => {
+  $xhTracker(TrackerKeyEvent.Login, { method: 'email', user_type: userType })
+  $attrTracker(TrackerBehaviorEvent.LoginSuccess, { source, method: 'email', user_type: userType })
+  fbTracker.trackLoginSuccess({ source, method: 'email' })  // → fbq('trackCustom', 'Login', ...)
+}
+
+// app/composables/useRegisterTracker.ts (主站注册路径, 注册=新登录)
+const trackSignUpSuccessEmail = () => {
+  $xhTracker(TrackerKeyEvent.SignUp, { method: 'email', source })
+  fbTracker.trackCompleteRegistration('email')                              // → fbq('track', 'CompleteRegistration')
+  $attrTracker(TrackerBehaviorEvent.LoginSuccess, { source, method: 'email', user_type: 'new' })
+  fbTracker.trackLoginSuccess({ source, method: 'email' })                  // → fbq('trackCustom', 'Login')
+}
+```
+
+> `source` 字段按 `route.path` 自动推断: `/start` 投放页 → `'start'`, 其他入口 → `'main'`. 任何登录/注册入口的上报都集中在这两个 hook 内, 不允许业务组件再额外触发 fb Login.
 
 ## ❌ 反例
 
@@ -147,6 +211,7 @@ $attrTracker(TrackerBehaviorEvent.ClickPay, { value: 9.99 })
 | 场景 | 位置 | 说明 |
 |---|---|---|
 | FB Pixel `PageView` 初始化 | `app/plugins/00_a2_pixel.client.ts` 的 `fbq('init', ...); fbq('track', 'PageView')` | 由 SDK 初始化脚本自动一次，本身是 SDK 自检不属于业务事件 |
+| FB Pixel `CompleteRegistration` 注册 | `useRegisterTracker.trackSignUpSuccessEmail/Google` | 历史投放配置已绑定该事件名, 2026-05 PM 决议保留, 与新 `Login` 双发 |
 
 任何其他白名单需求**必须**先与 PM 确认，更新本文档后才能落地。
 
@@ -154,7 +219,7 @@ $attrTracker(TrackerBehaviorEvent.ClickPay, { value: 9.99 })
 
 ```bash
 # 1. 业务代码（组件 / store / page）是否裸 import useFacebookTracker
-# 应该只命中已配对业务 hook (useStartTracker / usePricingTracker / useRegisterTracker)
+# 应该只命中已配对业务 hook (useStartTracker / usePricingTracker / useRegisterTracker / useLoginTracker / useLandingTracker)
 rg -n "useFacebookTracker\\(\\)|from.*useFacebookTracker" app/ -g '!app/composables/use*Tracker.ts'
 
 # 2. fbq 直接调用 (除了 PageView 初始化白名单)
@@ -163,7 +228,11 @@ rg -n "fbq\\(['\"]track" app/ -g '!app/plugins/00_a2_pixel.client.ts'
 # 3. 业务事件名混用 PascalCase
 rg -n "\\\$attrTracker\\(['\"][A-Z]|\\\$xhTracker\\(['\"][A-Z]" app/
 
-# 4. 同函数体内 fb + xh/attr 是否成对 (人工审查; 推荐用 ast-grep)
+# 4. ⚠️ FB 通道分流自检: $fbTracker 只能被传 FB 官方标准事件名
+#    下列正则匹配 $fbTracker('<不在白名单内的名字>', ...), 输出非空即违规
+rg -n "\\\$fbTracker\\(['\"](?!PageView|ViewContent|Search|AddToCart|AddToWishlist|InitiateCheckout|AddPaymentInfo|Purchase|Subscribe|StartTrial|Lead|CompleteRegistration|Contact|CustomizeProduct|Donate|FindLocation|Schedule|SubmitApplication)" app/
+
+# 5. 同函数体内 fb + xh/attr 是否成对 (人工审查; 推荐用 ast-grep)
 ast-grep --pattern '$$$ fbTracker.$M($$$) $$$' app/composables/
 ```
 

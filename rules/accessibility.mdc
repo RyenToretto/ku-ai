@@ -1,0 +1,101 @@
+---
+description: 无障碍性 (a11y) 开发规范 WCAG 2.1 AA
+globs: "**/*.vue"
+alwaysApply: false
+---
+
+# 无障碍性规范 (WCAG 2.1 AA)
+
+## 语义化 HTML
+
+- 使用原生语义元素优先于 `<div>` + ARIA：`<button>`、`<nav>`、`<main>`、`<article>`、`<section>`、`<header>`、`<footer>`
+- 标题层级从 `<h1>` 开始，逐级递增，不跳级
+- 每个页面有且只有一个 `<h1>`（通常对应页面标题）
+- 列表用 `<ul>`/`<ol>` + `<li>`，不要用 `<div>` 堆叠模拟
+
+## 键盘导航
+
+- 所有可交互元素必须可通过键盘访问（Tab、Enter、Space、Escape）
+- Tab 序遵循视觉阅读顺序，不要随意设置 `tabindex > 0`
+- `tabindex="0"` 让非原生可聚焦元素加入 Tab 序
+- `tabindex="-1"` 让元素可程序化聚焦但不在 Tab 序中
+
+### 组合控件方向键导航（radiogroup / listbox / tabs）
+
+- 容器必须有 `aria-label`（或 `aria-labelledby`），且对应的 prop 设为 **required**——缺失时屏幕阅读器无法描述控件用途（WCAG 4.1.2）
+- 使用 Roving tabindex：当前激活项 `tabindex="0"`，其余 `tabindex="-1"`
+- 方向键循环遍历时必须处理**无选中**初始态：`findIndex` 返回 `-1` 时，ArrowDown 从首项、ArrowUp 从末项开始
+- 遍历时跳过 `disabled` 项，全部 disabled 则不操作
+
+### 焦点陷阱（模态框/弹窗）
+
+模态框打开时焦点必须限制在模态框内，关闭后还原到触发元素：
+
+```typescript
+const trapFocus = (element: HTMLElement) => {
+  const focusableEls = element.querySelectorAll(
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  )
+  const firstEl = focusableEls[0] as HTMLElement
+  const lastEl = focusableEls[focusableEls.length - 1] as HTMLElement
+
+  element.addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab') return
+    if (e.shiftKey && document.activeElement === firstEl) {
+      e.preventDefault()
+      lastEl.focus()
+    } else if (!e.shiftKey && document.activeElement === lastEl) {
+      e.preventDefault()
+      firstEl.focus()
+    }
+  })
+}
+```
+
+## ARIA 属性
+
+| 场景 | 属性 |
+|------|------|
+| 图标按钮（无文本） | `aria-label="描述"` |
+| 展开/折叠 | `aria-expanded="true/false"` |
+| 下拉菜单 | `aria-haspopup="true"` + `aria-expanded` |
+| 加载状态 | `aria-busy="true"` + `aria-live="polite"` |
+| 错误提示 | `aria-invalid="true"` + `aria-describedby="error-id"` |
+| 当前页面/选中 | `aria-current="page"` / `aria-selected="true"` |
+| 禁用状态 | 优先使用 `disabled` 属性，其次 `aria-disabled="true"` |
+
+## 色彩对比度
+
+| 类型 | 最低对比度 |
+|------|-----------|
+| 正常文本（< 18px 或 < 14px bold） | 4.5:1 |
+| 大文本（>= 18px 或 >= 14px bold） | 3:1 |
+| UI 组件边界、图标 | 3:1 |
+
+项目深色模式下注意：`--ui-text-dimmed: #6b7280` 在深色背景上可能不达标，功能性文本避免使用此色。
+
+## 图片
+
+- 信息性图片必须有描述性 `alt` 文本
+- 装饰性图片使用 `alt=""`（空字符串），并添加 `aria-hidden="true"`
+- 复杂图表/信息图需提供文本替代（如隐藏的说明段落）
+
+## 表单
+
+- 每个 `<input>` 必须关联 `<label>`（通过 `for`/`id` 或包裹）
+- 使用 Nuxt UI 的 `UFormField` 组件时会自动处理
+- 错误信息通过 `aria-describedby` 关联到表单控件
+- 必填字段标注 `aria-required="true"` 或使用 `required` 属性
+
+## 多媒体
+
+- 视频提供字幕或文本摘要（若有语音内容）
+- 自动播放的视频必须默认静音（`muted`）
+- 提供暂停/停止控制
+
+## 禁止事项
+
+- 禁止使用 `outline: none` / `outline: 0` 移除焦点指示器而不提供替代样式
+- 禁止仅依赖颜色传达信息（色盲用户无法区分）
+- 禁止使用 `title` 属性作为唯一的无障碍标注
+- 禁止可交互元素的点击区域小于 44x44px（移动端触摸目标）

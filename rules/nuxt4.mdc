@@ -1,0 +1,13 @@
+---
+description: Nuxt4 核心架构与编码约定
+alwaysApply: true
+---
+
+# Nuxt4 项目核心规范
+
+- 严格遵守 Nuxt4 的 `app/` 目录结构，禁止使用 Nuxt3 老架构
+- 类型统一定义在 `/shared/types/` 下，分文件定义 `.d.ts`
+- Pinia 优先 setup 形式的 store，而非选项式
+- `.nuxt` 目录已配置 auto-import（含 `auto-imports.d.ts`），`app/` 下禁止做不必要的手动导入
+- 遵循组合式风格：hook / composable / store / auto-import
+- ESLint: 使用 `import.meta.client` 替代 `process.client`

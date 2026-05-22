@@ -1,0 +1,75 @@
+---
+description: "@do-power/utils 与 @do-power/marketing 工具库使用规范 — 替代旧的 du-utils tarball 依赖"
+globs: "**/*.{ts,tsx,js,jsx,vue}"
+alwaysApply: false
+---
+
+# @do-power/utils 与 @do-power/marketing 使用规范
+
+`du-utils` (file:tar.gz) 已下线，按职责拆分为两个 `@do-power` 私仓包：
+
+| 包 | 职责 | 典型 API |
+|---|---|---|
+| `@do-power/utils` | 通用工具（device / dom / url / date / image / number / string / file / encoding / function / object / array / storage / validate / fingerprint / logger / rem / env / uuid 等）| `getBrowserInfo` / `formatDate` / `compressImage` / `getPageParams` / `lockScroll` / `safeEncodeName` / `scrollToTop` / `getRealType` / `isAllSame` / `isValidNumber` ... |
+| `@do-power/marketing` | 营销 / 投放归因（adjust / appsflyer / landing path / pixel / download / color） | `isFramePage` / `isMatchPage` / `isContainMatchPage` / `isPricingPage` / `isTiktok` / `createBootstrapScript` / `createPixelScripts` / `getLandingParams` / `getDeviceToken` / `getPkg` / `replaceMacros` / `FB_CAMPAIGN_MACROS` ... |
+
+> 切换日期：2026-05-19
+> 同时彻底移除 `du-utils` / `du-composables` / `xh-report` 三个 `file:*.tar.gz` 依赖，统一走华为云私仓的 `@do-power/*` 体系（详见 `package.json` 与 `.npmrc`）。
+
+## 与旧 `du-utils` 的差异
+
+- **不再隐式包含 lodash-es**。`du-utils` 旧版用 `export * from 'lodash-es'` 顺带把整个 lodash 暴露出来；`@do-power/utils` 已剔除该 re-export。
+  - 业务侧仍要用 lodash 时，直接 `npm i lodash-es` 后 `import { debounce } from 'lodash-es'`。
+  - 简单的 `debounce / throttle / deepClone / sleep / retry` 等 `@do-power/utils` 自带实现，优先用自家版本（语义一致，体积更小）。
+- **landing / 投放归因相关函数迁到 `@do-power/marketing`**。
+
+## 导入规则
+
+```typescript
+// ✅ 通用工具一律从 @do-power/utils 显式 import
+import { formatDate, getRealType, compressImage, getPageParams } from '@do-power/utils'
+
+// ✅ 营销路径匹配从 @do-power/marketing 显式 import
+import { isFramePage, isMatchPage, isPricingPage } from '@do-power/marketing'
+
+// ❌ 不允许：旧路径
+import { formatDate } from 'du-utils'                          // 已下线
+import { isFramePage } from 'du-utils'                         // 已迁移至 @do-power/marketing
+```
+
+## Nuxt auto-import
+
+`nuxt.config.ts` 通过 `presetToNuxtImports(doPowerUtilsPreset)` 与 `presetToNuxtImports(doPowerMarketingPreset)` 把两个包**全部**命名导出注入到 Nuxt unimport 表，因此 `app/` 下绝大多数地方直接裸调即可（不需要 import）：
+
+```vue
+<script setup lang="ts">
+// 无需 import，直接用
+const isFrame = isFramePage(route.path)
+const params = getPageParams()
+const info = getBrowserInfo()
+</script>
+```
+
+## 文档与类型
+
+- 具体参数、返回值、说明：以 `node_modules/@do-power/utils/dist/index.d.ts` 与 `node_modules/@do-power/marketing/dist/index.d.ts` 里的 JSDoc 为准（Cursor / IDE 会直接补全）。
+- 仓库源码：[`do-power` monorepo](https://github.com/do-power/do-power)（华为云内网仓库）
+
+## 升级 / 新增工具流程
+
+1. 在 `do-power` 仓库 `packages/utils/src/` 或 `packages/marketing/src/` 新增函数并 `export`
+2. `pnpm --filter @do-power/utils build`（build script 会自动同步 `auto-import.ts` 到最新的 153+ 个导出）
+3. `pnpm changeset` → `pnpm version-packages` → `pnpm release` 发到华为云
+4. fe-picpopop `npm update @do-power/utils @do-power/marketing` 拉新版本，业务侧立即可裸调
+
+## 自检命令
+
+```bash
+# 不应再出现旧包名引用
+rg -n "from\\s+['\\\"](du-utils|du-composables|xh-report)['\\\"]" app/ shared/ server/
+
+# 不应再出现旧 tarball 依赖
+rg -n "du-utils-[0-9.]+\\.tar\\.gz|du-composables-[0-9.]+\\.tar\\.gz|xh-report-[0-9.]+\\.tar\\.gz" package.json
+```
+
+输出都应为空。
