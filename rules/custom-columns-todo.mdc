@@ -1,0 +1,33 @@
+---
+description: 自定义列任务必须同步维护 TODO 文档
+globs: src/mixins/tableControl.js,src/components/globalComponents/TableWrap.vue,src/components/globalComponents/doTable/**/*.vue,docs/custom-columns/**
+alwaysApply: false
+---
+
+# 自定义列任务同步约束
+
+凡涉及自定义列相关代码、文档、设计、问题修复或后续迭代规划，必须同步维护 `docs/custom-columns/TODO.md`。
+
+## 范围
+
+- `src/mixins/tableControl.js`
+- `src/components/globalComponents/TableWrap.vue`
+- `src/components/globalComponents/doTable/**/*.vue`
+- `docs/custom-columns/**`
+- 任何接入或调整自定义列能力的业务页面
+
+## 执行要求
+
+- 当前阶段优先修复和优化既有问题，暂不推进新功能迭代。
+- 每个自定义列相关任务开始前，先检查 `docs/custom-columns/TODO.md` 是否已有对应条目。
+- 未完成任务统一标记为 `⭕️`。
+- 已完成任务统一标记为 `✅`。
+- 新发现的问题、风险、回归项、设计债务必须追加到 `TODO.md`，不要只写在聊天或临时笔记里。
+- 任务完成时必须同步更新 `TODO.md` 状态和必要说明。
+
+## 标记示例
+
+```markdown
+- ⭕️ 修复自定义列初始化重复请求问题
+- ✅ 建立自定义列任务同步规则
+```

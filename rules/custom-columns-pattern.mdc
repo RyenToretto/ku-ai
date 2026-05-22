@@ -1,0 +1,132 @@
+---
+description: 自定义列开发模式规范。新 table 页面接入自定义列时适用，约束 schema 结构、接入方式、模板写法和禁止事项。
+globs: src/modules/**/*.vue, src/**/*ColumnSchemas.js, src/mixins/useSchemaColumnConfig.js
+alwaysApply: false
+---
+
+# 自定义列开发模式规范
+
+## 核心规则
+
+**新 table 页面**必须使用 `useSchemaColumnConfig` mixin + schema + v-for 方案。
+禁止新页面再用 `tableControl` mixin 接入自定义列（`tableControl` 仅用于存量页面过渡）。
+
+## 接入步骤
+
+### 1. 新建列 schema 文件（`*ColumnSchemas.js`）
+
+```js
+// 叶子列必须有全局唯一且稳定的 prop
+export const MY_COLUMN_SCHEMAS = [
+  { prop: 'cost', label: '成本', minWidth: 110, align: 'right', renderType: 'float', renderArgs: [2, true], group: '效果指标' },
+  { prop: 'rate', label: '转化率', minWidth: 100, align: 'right', renderType: 'percent', renderArgs: [1, true], group: '效果指标' },
+  // 嵌套表头：父节点设 children，不设 prop
+  { label: '转化层', children: [
+    { prop: 'install', label: '激活', renderType: 'integer', group: '转化指标' }
+  ]}
+]
+```
+
+### 2. 页面组件 — data() 提供三个字段
+
+```js
+import useSchemaColumnConfig from '@/mixins/useSchemaColumnConfig'
+
+export default {
+  mixins: [useSchemaColumnConfig],
+  data() {
+    return {
+      columnSchemas: MY_COLUMN_SCHEMAS,
+      schemaStorageKey: 'my_module_col',  // 全局唯一，勿与其他页面重复
+      schemaVersion: 'sv1',               // 破坏性变更（rename/delete prop）时递增
+    }
+  }
+}
+```
+
+### 3. 模板 — 扁平列
+
+```html
+<!-- table-wrap 必须加 enable-do-header :disabled-column-config="false" -->
+<!-- el-table 必须绑定 :key="tableRenderKey" -->
+<table-wrap v-loading="loading" enable-do-header :disabled-column-config="false">
+  <el-table :key="tableRenderKey" :data="tableData" border>
+    <!-- 固定列写在 v-for 外 -->
+    <el-table-column prop="name" label="名称" fixed="left" />
+    <!-- 可配置列 -->
+    <el-table-column
+      v-for="schema in visibleSchemas"
+      :key="schema.prop"
+      :prop="schema.prop"
+      :label="schema.label"
+      :min-width="schema.minWidth"
+      :align="schema.align || 'left'"
+      :render-header="schema.renderHeader || undefined"
+      v-bind="schema.elAttrs || {}"
+    >
+      <template #default="{ row, column, $index }">
+        <component :is="schema.cellComponent" v-if="schema.cellComponent"
+          :row="row" :column="column" :index="$index" :schema="schema" />
+        <div v-else :class="['float','percent','integer','roi-link'].includes(schema.renderType) ? 'mono' : 'name'">
+          {{ formatSchemaCell(row[column.property], schema) }}
+        </div>
+      </template>
+    </el-table-column>
+  </el-table>
+</table-wrap>
+```
+
+### 4. 模板 — 嵌套表头（有 children 的 schema）
+
+```html
+<!-- 引入递归组件 SchemaColumn，替换 el-table-column v-for 块 -->
+<schema-column
+  v-for="schema in visibleSchemas"
+  :key="schema.prop || schema.label"
+  :schema="schema"
+  :format-cell="formatSchemaCell"
+/>
+```
+
+`SchemaColumn` 路径：`@/modules/_example/customColumns/_components/SchemaColumn.vue`
+
+## renderType 速查
+
+| renderType | renderArgs | 说明 |
+|---|---|---|
+| `text`（默认） | 无 | 原始文本 |
+| `integer` | 无 | 整数 |
+| `float` | `[digits=2, noZero=true]` | 浮点数 |
+| `percent` | `[digits=1, noZero=true]` | 百分比 |
+| `roi-link` | `[digits=2, noZero=true]` | 可点击跳转的 ROI 浮点 |
+
+## 自定义单元格（cellComponent）
+
+- **推荐**：外部 `.vue` SFC，有 scoped style、IDE 跳转
+- **简单场景**：render 函数 `{ props: ['row','column','index','schema'], render(h){} }`
+- Props 固定为：`row`, `column`, `index`, `schema`
+
+## 版本管理规则
+
+- 字段**新增**：不递增 `schemaVersion`（新 prop 不影响已有配置）
+- 字段**重命名 / 删除**：必须递增 `schemaVersion`（触发旧缓存自动失效）
+- `schemaVersion` 建议格式：`'sv1'` → `'sv2'` → ...
+
+## 禁止事项
+
+- 新页面禁止用 `tableControl` mixin 接入自定义列
+- `el-table` 必须绑定 `:key="tableRenderKey"`，否则列顺序变更不生效
+- `schemaStorageKey` 在多个页面间必须全局唯一，重复会导致配置互相覆盖
+- 固定列（`alwaysVisible`）写在 `v-for` 外，不能放进 `columnSchemas`
+- 每个叶子 schema 的 `prop` 必须全局唯一且稳定（重命名必须同步递增 `schemaVersion`）
+
+## 示例参考
+
+`src/modules/_example/customColumns/` 下有 7 个场景 Demo：
+- `01Basic`：基础用法 · `02ElAttrs`：elAttrs 属性透传 · `03Slots`：自定义 slot
+- `04Nested`：嵌套表头 · `05Version`：版本管理
+- `06SlotComponents`：cellComponent 三种写法 · `07HeaderSlots`：自定义 header slot
+
+真实接入参考：`AccountList.vue`、`HourReportData.vue`
+
+详细设计决策见 `docs/custom-columns/ADR.md`
