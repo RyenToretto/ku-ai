@@ -8,6 +8,7 @@
 ku-ai/
 ├── mcps/                    # MCP (Model Context Protocol) 服务器
 │   ├── chrome-devtools/     # Chrome DevTools 调试
+│   ├── codegraph/           # 本地代码知识图谱（colbymchenry/codegraph）
 │   ├── context7/            # 库文档实时查询
 │   ├── playwright/          # 浏览器自动化测试
 │   ├── sequential-thinking/ # 结构化思维链
@@ -15,13 +16,16 @@ ku-ai/
 │   └── lighthouse/          # 性能/无障碍/SEO 审计
 │
 ├── skills/                  # 全局 Agent Skills (~/.agents/skills/)
-│   ├── design-md/           # Stitch DESIGN.md 生成
+│   ├── darwin-skill/        # Skill 自主优化循环（评估→改进→测试→保留/回滚）
+│   ├── design-md/           # Stitch DESIGN.md 生成（含 Awesome DESIGN.md 生态资源）
 │   ├── enhance-prompt/      # UI Prompt 优化
 │   ├── find-skills/         # Skills 发现与安装
 │   ├── impeccable/          # 7 大设计领域专业指导
 │   ├── stitch-design/       # Stitch 统一设计工作流
 │   ├── systematic-debugging/# 系统化调试流程
+│   ├── taste-skill/         # Anti-slop 前端设计 Skill（Leonxlnx/taste-skill）
 │   ├── test-driven-development/ # TDD 测试驱动开发
+│   ├── ui-ux-pro-max/       # 设计智能数据库（67 风格/161 色板/99 UX 指南）
 │   └── verification-before-completion/ # 完成前验证
 │
 ├── skills-cursor/           # Cursor 内置 Skills (~/.cursor/skills-cursor/)
@@ -35,11 +39,12 @@ ku-ai/
 │
 ├── plugins/                 # Cursor 插件 Skills
 │   ├── figma/               # Figma 设计集成 (7 skills)
-│   └── superpowers/         # Superpowers 工作流 (14 skills)
+│   └── superpowers/         # Superpowers 工作流框架 (14 skills) — 调研文档
 │
 ├── rules/                   # 全局 Cursor Rules (~/.cursor/rules/)
 │   ├── code-quality.mdc     # 代码质量规范
-│   └── git-workflow.mdc     # Git 工作流规范
+│   ├── git-workflow.mdc     # Git 工作流规范
+│   └── karpathy-claude.md   # Karpathy CLAUDE.md 四条行为原则调研（仅文档，非激活 Rule）
 │
 ├── templates/               # 新建 MCP/Skill 的模板
 │   ├── mcp-template/        # MCP 文档模板

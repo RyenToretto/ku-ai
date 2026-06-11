@@ -36,5 +36,17 @@ DESIGN.md 文件包含：
 
 ## 相关链接
 
-- [GitHub](https://github.com/google-labs-code/stitch-skills)
+- [Google Stitch Skills GitHub](https://github.com/google-labs-code/stitch-skills)
 - [Skills 页面](https://skills.sh/google-labs-code/stitch-skills)
+- [DESIGN.md 官方规范（google-labs-code/design.md）](https://github.com/google-labs-code/design.md)
+- [Stitch DESIGN.md 文档](https://stitch.withgoogle.com/docs/design-md/overview/)
+
+## 社区资源
+
+DESIGN.md 格式已形成活跃的社区生态，详见 [docs/awesome-design-md.md](docs/awesome-design-md.md)：
+
+| 资源 | 描述 |
+|------|------|
+| [VoltAgent/awesome-design-md](https://github.com/VoltAgent/awesome-design-md) | 89K+ ⭐ — 55+ 个真实品牌 DESIGN.md 文件，可直接复制到项目使用 |
+| [google-labs-code/design.md](https://github.com/google-labs-code/design.md) | 官方规范 + CLI 工具（lint、export、spec） |
+| [dimabraven/design-md](https://github.com/dimabraven/design-md) | 带 CLI 的 DESIGN.md 文件目录，可按 AI 工具过滤 |
